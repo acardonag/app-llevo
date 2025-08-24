@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestionar Mensajeros (Firebase)</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Local CSS -->
+    <link rel="stylesheet" href="styles.css">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Import Firebase configuration
+        import { firebaseConfig } from './firebase-config.js';
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Make Firebase available globally
+        window.db = db;
+        window.FirebaseSDK = {
+            collection,
+            addDoc,
+            getDocs,
+            updateDoc,
+            deleteDoc,
+            doc,
+            query,
+            where,
+            orderBy
+        };
+    </script>
+</head>
+<body class="min-h-screen p-4 flex flex-col items-center bg-gradient-to-br">
+
+    <div id="app-root" class="w-full max-w-md">
+        <!-- Content will be rendered here by JavaScript -->
+        <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+            <p class="text-xl text-gray-700">Cargando aplicación...</p>
+        </div>
+    </div>
+
+    <!-- Custom Modal Structure -->
+    <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
+            <p id="modal-message" class="text-lg font-semibold text-gray-800 mb-4"></p>
+            <div id="modal-input-container" class="mb-4 hidden">
+                <label for="modal-input" id="modal-input-label" class="block text-sm font-medium text-gray-700 mb-1 text-left"></label>
+                <input
+                    type="text"
+                    id="modal-input"
+                    class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder=""
+                />
+            </div>
+            <div id="modal-buttons" class="flex justify-center space-x-4">
+                <button id="modal-confirm-button" class="bg-red-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 hidden">
+                    Sí
+                </button>
+                <button id="modal-accept-button" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 hidden">
+                    Aceptar
+                </button>
+                <button id="modal-close-button" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state variables
+        let messengers = [];
+        let selectedMessengerId = '';
+        let selectedMessenger = null;
+        let servicesHistory = [];
+        let topupsHistory = [];
+        let errorMessage = '';
+        let isInitialized = false;
+        let currentUserId = 'usuario-local';
+        let isProcessing = false; // Prevent duplicate transactions
+
+        // Local Storage Keys
+        const STORAGE_KEYS = {
+            MESSENGERS: 'llevo_messengers',
+            SERVICES: 'llevo_services',
+            TOPUPS: 'llevo_topups',
+            USER_ID: 'llevo_user_id'
+        };
+
+        // DOM elements
+        const appRoot = document.getElementById('app-root');
+        const customModal = document.getElementById('custom-modal');
+        const modalMessage = document.getElementById('modal-message');
+        const modalInputContainer = document.getElementById('modal-input-container');
+        const modalInput = document.getElementById('modal-input');
+        const modalInputLabel = document.getElementById('modal-input-label');
+        const modalConfirmButton = document.getElementById('modal-confirm-button');
+        const modalAcceptButton = document.getElementById('modal-accept-button');
+        const modalCloseButton = document.getElementById('modal-close-button');
+
+        let currentModalOnConfirm = null;
+        let currentModalOnInputSubmit = null;
+
+        // --- Modal Functions ---
+        function showModal(type, message, onAction = null, inputPlaceholder = '', inputLabel = '') {
+            modalMessage.textContent = message;
+            modalInputContainer.classList.add('hidden');
+            modalConfirmButton.classList.add('hidden');
+            modalAcceptButton.classList.add('hidden');
+            modalCloseButton.textContent = 'Cerrar';
+
+            if (type === 'confirm') {
+                modalConfirmButton.classList.remove('hidden');
+                modalCloseButton.textContent = 'No';
+                currentModalOnConfirm = onAction;
+            } else if (type === 'input') {
+                modalInputContainer.classList.remove('hidden');
+                modalInput.placeholder = inputPlaceholder;
+                modalInputLabel.textContent = inputLabel;
+                modalInput.value = ''; // Clear previous input
+                modalAcceptButton.classList.remove('hidden');
+                currentModalOnInputSubmit = onAction;
+            } else { // 'message'
+                modalCloseButton.textContent = 'Cerrar';
+            }
+            customModal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            customModal.classList.add('hidden');
+            currentModalOnConfirm = null;
+            currentModalOnInputSubmit = null;
+        }
+
+        // Event listeners for modal buttons
+        modalCloseButton.addEventListener('click', closeModal);
+        modalConfirmButton.addEventListener('click', () => {
+            if (currentModalOnConfirm) currentModalOnConfirm();
+            closeModal();
+        });
+        modalAcceptButton.addEventListener('click', () => {
+            if (currentModalOnInputSubmit) currentModalOnInputSubmit(modalInput.value);
+            closeModal();
+        });
+
+        // --- Utility Functions ---
+        function getFormattedDate(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleDateString('es-CO', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        }
+
+        // Function to recalculate messenger balance based on all transactions
+        function recalculateMessengerBalance(messengerId) {
+            if (!messengerId) return 0;
+            
+            const totalServices = servicesHistory.reduce((sum, service) => sum + service.amount, 0);
+            const totalTopups = topupsHistory.reduce((sum, topup) => sum + topup.amount, 0);
+            
+            // Base balance starts at 0, so final balance = totalTopups - totalServices
+            return totalTopups - totalServices;
+        }
+
+        // Function to clear all forms
+        function clearForms() {
+            const serviceDescriptionInput = document.getElementById('service-description');
+            const serviceAmountInput = document.getElementById('service-amount');
+            const topupAmountInput = document.getElementById('topup-amount');
+            
+            if (serviceDescriptionInput) serviceDescriptionInput.value = '';
+            if (serviceAmountInput) serviceAmountInput.value = '';
+            if (topupAmountInput) topupAmountInput.value = '';
+        }
+
+        // Safety function to reset processing state
+        function resetProcessingState() {
+            isProcessing = false;
+        }
+
+        // Safety timeout to prevent stuck processing state
+        function setProcessingTimeout() {
+            setTimeout(() => {
+                if (isProcessing) {
+                    console.warn('Processing timeout reached, resetting state');
+                    isProcessing = false;
+                    renderApp();
+                }
+            }, 10000); // 10 seconds timeout
+        }
+
+        // --- Firebase Functions ---
+        async function saveToFirebase(collectionName, data, documentId = null) {
+            try {
+                if (documentId) {
+                    // Update existing document
+                    const docRef = FirebaseSDK.doc(db, collectionName, documentId);
+                    await FirebaseSDK.updateDoc(docRef, data);
+                } else {
+                    // Add new document
+                    await FirebaseSDK.addDoc(FirebaseSDK.collection(db, collectionName), data);
+                }
+            } catch (error) {
+                console.error('Error saving to Firebase:', error);
+                showModal('message', 'Error al guardar datos en Firebase.');
+                throw error;
+            }
+        }
+
+        async function loadFromFirebase(collectionName, userId = null) {
+            try {
+                let q;
+                if (userId) {
+                    q = FirebaseSDK.query(
+                        FirebaseSDK.collection(db, collectionName),
+                        FirebaseSDK.where('userId', '==', userId)
+                    );
+                } else {
+                    q = FirebaseSDK.query(FirebaseSDK.collection(db, collectionName));
+                }
+                
+                const querySnapshot = await FirebaseSDK.getDocs(q);
+                const data = [];
+                querySnapshot.forEach((doc) => {
+                    data.push({ id: doc.id, ...doc.data() });
+                });
+                return data;
+            } catch (error) {
+                console.error('Error loading from Firebase:', error);
+                showModal('message', 'Error al cargar datos de Firebase.');
+                return [];
+            }
+        }
+
+        async function deleteFromFirebase(collectionName, documentId) {
+            try {
+                await FirebaseSDK.deleteDoc(FirebaseSDK.doc(db, collectionName, documentId));
+            } catch (error) {
+                console.error('Error deleting from Firebase:', error);
+                showModal('message', 'Error al eliminar datos de Firebase.');
+                throw error;
+            }
+        }
+
+        // --- Data Management Functions ---
+        async function loadMessengers() {
+            try {
+                messengers = await loadFromFirebase('messengers', currentUserId);
+                renderApp();
+            } catch (error) {
+                console.error('Error loading messengers:', error);
+                messengers = [];
+                renderApp();
+            }
+        }
+
+        async function saveMessenger(messenger) {
+            try {
+                if (messenger.id && messenger.id.length > 20) {
+                    // This is a Firebase document ID, update existing
+                    await saveToFirebase('messengers', messenger, messenger.id);
+                } else {
+                    // This is a new messenger, add to Firebase
+                    const docRef = await FirebaseSDK.addDoc(FirebaseSDK.collection(db, 'messengers'), {
+                        ...messenger,
+                        userId: currentUserId,
+                        createdAt: new Date().toISOString()
+                    });
+                    messenger.id = docRef.id;
+                }
+            } catch (error) {
+                console.error('Error saving messenger:', error);
+                throw error;
+            }
+        }
+
+        async function loadServices(messengerId) {
+            try {
+                // Simplified query without orderBy to avoid index requirements
+                const q = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'services'),
+                    FirebaseSDK.where('messengerId', '==', messengerId)
+                );
+                const querySnapshot = await FirebaseSDK.getDocs(q);
+                servicesHistory = [];
+                querySnapshot.forEach((doc) => {
+                    servicesHistory.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Sort locally to avoid Firebase index requirements
+                servicesHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                renderApp();
+            } catch (error) {
+                console.error('Error loading services:', error);
+                servicesHistory = [];
+                renderApp();
+            }
+        }
+
+        async function saveService(service) {
+            try {
+                await saveToFirebase('services', {
+                    ...service,
+                    userId: currentUserId,
+                    messengerId: selectedMessengerId,
+                    date: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error('Error saving service:', error);
+                throw error;
+            }
+        }
+
+        async function loadTopups(messengerId) {
+            try {
+                // Simplified query without orderBy to avoid index requirements
+                const q = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'topups'),
+                    FirebaseSDK.where('messengerId', '==', messengerId)
+                );
+                const querySnapshot = await FirebaseSDK.getDocs(q);
+                topupsHistory = [];
+                querySnapshot.forEach((doc) => {
+                    topupsHistory.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Sort locally to avoid Firebase index requirements
+                topupsHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                renderApp();
+            } catch (error) {
+                console.error('Error loading topups:', error);
+                topupsHistory = [];
+                renderApp();
+            }
+        }
+
+        async function saveTopup(topup) {
+            try {
+                await saveToFirebase('topups', {
+                    ...topup,
+                    userId: currentUserId,
+                    messengerId: selectedMessengerId,
+                    date: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error('Error saving topup:', error);
+                throw error;
+            }
+        }
+
+        // --- Export/Import Functions ---
+        async function exportData() {
+            try {
+                // Load all data from Firebase
+                const allServices = await loadFromFirebase('services', currentUserId);
+                const allTopups = await loadFromFirebase('topups', currentUserId);
+                
+                const exportData = {
+                    messengers: messengers,
+                    services: allServices,
+                    topups: allTopups,
+                    exportDate: new Date().toISOString(),
+                    version: '2.0',
+                    source: 'Firebase'
+                };
+
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `llevo_backup_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                
+                showModal('message', 'Datos exportados exitosamente desde Firebase.');
+            } catch (error) {
+                console.error('Error exporting data:', error);
+                showModal('message', 'Error al exportar los datos desde Firebase.');
+            }
+        }
+
+        async function importData() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = async function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            const importData = JSON.parse(e.target.result);
+                            
+                            if (importData.messengers && importData.services && importData.topups) {
+                                // Import messengers
+                                for (const messenger of importData.messengers) {
+                                    messenger.userId = currentUserId;
+                                    await saveMessenger(messenger);
+                                }
+                                
+                                // Import services
+                                for (const service of importData.services) {
+                                    service.userId = currentUserId;
+                                    await saveService(service);
+                                }
+                                
+                                // Import topups
+                                for (const topup of importData.topups) {
+                                    topup.userId = currentUserId;
+                                    await saveTopup(topup);
+                                }
+                                
+                                // Reload data
+                                await loadMessengers();
+                                
+                                selectedMessengerId = '';
+                                selectedMessenger = null;
+                                servicesHistory = [];
+                                topupsHistory = [];
+                                
+                                showModal('message', 'Datos importados exitosamente a Firebase.');
+                                renderApp();
+                            } else {
+                                showModal('message', 'Formato de archivo inválido.');
+                            }
+                        } catch (error) {
+                            console.error('Error parsing import file:', error);
+                            showModal('message', 'Error al leer el archivo de importación.');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            
+            input.click();
+        }
+
+        // --- Render Functions ---
+        function renderApp() {
+            if (errorMessage) {
+                appRoot.innerHTML = `
+                    <div class="flex items-center justify-center min-h-screen bg-red-100 text-red-700 p-4 rounded-xl shadow-md">
+                        <p class="text-xl">${errorMessage}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!isInitialized) {
+                appRoot.innerHTML = `
+                    <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+                        <p class="text-xl text-gray-700">Cargando aplicación...</p>
+                    </div>
+                `;
+                return;
+            }
+
+            appRoot.innerHTML = `
+                <!-- User ID display -->
+                <div class="w-full max-w-md text-center mb-4 p-2 bg-green-100 rounded-lg shadow-sm">
+                    <p class="text-sm text-green-700">Aplicación conectada a Firebase</p>
+                    <p class="text-xs font-mono text-green-900">Usuario: ${currentUserId}</p>
+                </div>
+
+                <!-- Export/Import Buttons -->
+                <div class="w-full max-w-md mb-4 flex space-x-2">
+                    <button
+                        id="export-button"
+                        class="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200 text-sm"
+                    >
+                        📤 Exportar
+                    </button>
+                    <button
+                        id="import-button"
+                        class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 text-sm"
+                    >
+                        📥 Importar
+                    </button>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md mb-6 border border-gray-200">
+                    <h1 class="text-3xl font-bold mb-6 text-center text-indigo-700">Gestionar Mensajeros</h1>
+
+                    <!-- Select Messenger -->
+                    <div class="mb-4">
+                        <label for="messenger-select" class="block text-lg font-semibold text-gray-700 mb-2">
+                            Selecciona un Mensajero:
+                        </label>
+                        <div class="flex items-center space-x-2">
+                            <select
+                                id="messenger-select"
+                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 ease-in-out bg-white"
+                            >
+                                <option value="">-- Seleccionar --</option>
+                                ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}
+                            </select>
+                            <button
+                                id="add-messenger-button"
+                                class="bg-indigo-600 text-white p-3 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
+                                title="Agregar nuevo mensajero"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${selectedMessenger ? `
+                        <div class="mt-8">
+                            <h2 class="text-2xl font-semibold mb-4 text-center text-indigo-600">
+                                Resumen de ${selectedMessenger.name}
+                            </h2>
+                            <div class="bg-indigo-50 p-4 rounded-xl shadow-inner mb-6 border border-indigo-200">
+                                <p class="text-xl font-bold text-center text-indigo-800">
+                                    Saldo Actual: <span class="text-green-600">$${recalculateMessengerBalance(selectedMessengerId).toFixed(2)}</span>
+                                </p>
+                            </div>
+
+                            <!-- Register Service Form -->
+                            <form id="service-form" class="bg-red-50 p-5 rounded-xl shadow-md mb-6 border border-red-200">
+                                <h3 class="text-xl font-semibold mb-4 text-red-700">Registrar Servicio</h3>
+                                <div class="mb-4">
+                                    <label for="service-description" class="block text-sm font-medium text-red-600 mb-1">
+                                        Descripción del Servicio:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="service-description"
+                                        class="w-full p-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                                        placeholder="Ej: Entrega de paquete A"
+                                        required
+                                    />
+                                </div>
+                                <div class="mb-4">
+                                    <label for="service-amount" class="block text-sm font-medium text-red-600 mb-1">
+                                        Monto del Servicio ($):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="service-amount"
+                                        class="w-full p-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                                        placeholder="Ej: 15.00"
+                                        step="0.01"
+                                        required
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    id="service-submit-button"
+                                    class="w-full bg-red-600 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200"
+                                    ${isProcessing ? 'disabled' : ''}
+                                >
+                                    ${isProcessing ? 'Procesando...' : 'Descontar Servicio'}
+                                </button>
+                                ${isProcessing ? `
+                                    <button
+                                        type="button"
+                                        onclick="resetProcessingState(); renderApp();"
+                                        class="w-full mt-2 bg-gray-500 text-white p-2 rounded-lg font-semibold shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
+                                    >
+                                        Cancelar Transacción
+                                    </button>
+                                ` : ''}
+                            </form>
+
+                            <!-- Add Top-up Form -->
+                            <form id="topup-form" class="bg-green-50 p-5 rounded-xl shadow-md mb-6 border border-green-200">
+                                <h3 class="text-xl font-semibold mb-4 text-green-700">Agregar Recarga</h3>
+                                <div class="mb-4">
+                                    <label for="topup-amount" class="block text-sm font-medium text-green-600 mb-1">
+                                        Monto de la Recarga ($):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="topup-amount"
+                                        class="w-full p-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="Ej: 50.00"
+                                        step="0.01"
+                                        required
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    id="topup-submit-button"
+                                    class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200"
+                                    ${isProcessing ? 'disabled' : ''}
+                                >
+                                    ${isProcessing ? 'Procesando...' : 'Recargar Saldo'}
+                                </button>
+                                ${isProcessing ? `
+                                    <button
+                                        type="button"
+                                        onclick="resetProcessingState(); renderApp();"
+                                        class="w-full mt-2 bg-gray-500 text-white p-2 rounded-lg font-semibold shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
+                                    >
+                                        Cancelar Transacción
+                                    </button>
+                                ` : ''}
+                            </form>
+
+                            <!-- History of Services and Top-ups -->
+                            <div class="bg-white p-5 rounded-xl shadow-md mb-6 border border-gray-200">
+                                <h3 class="text-xl font-semibold mb-4 text-gray-700">Historial de Transacciones</h3>
+                                ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
+                                    <p class="text-gray-500">No hay transacciones registradas para este mensajero.</p>
+                                ` : ''}
+
+                                ${servicesHistory.length > 0 ? `
+                                    <div class="mb-4">
+                                        <h4 class="text-lg font-medium text-red-600 mb-2">Servicios Prestados</h4>
+                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
+                                            ${servicesHistory.map(service => `
+                                                <li class="mb-1 text-sm text-gray-700">
+                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-red-600">-${service.amount.toFixed(2)}</span>
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+
+                                ${topupsHistory.length > 0 ? `
+                                    <div>
+                                        <h4 class="text-lg font-medium text-green-600 mb-2">Recargas Realizadas</h4>
+                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
+                                            ${topupsHistory.map(topup => `
+                                                <li class="mb-1 text-sm text-gray-700">
+                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-green-600">+${topup.amount.toFixed(2)}</span>
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <!-- Delete Messenger Button -->
+                            <button
+                                id="delete-messenger-button"
+                                class="w-full bg-gray-400 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200"
+                            >
+                                Eliminar Mensajero
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            // Attach event listeners after rendering
+            attachEventListeners();
+        }
+
+        function attachEventListeners() {
+            const messengerSelect = document.getElementById('messenger-select');
+            if (messengerSelect) {
+                messengerSelect.addEventListener('change', async (e) => {
+                    selectedMessengerId = e.target.value;
+                    selectedMessenger = messengers.find(m => m.id === selectedMessengerId) || null;
+                    
+                    // Clear previous history completely to avoid duplicates
+                    servicesHistory = [];
+                    topupsHistory = [];
+                    
+                    // Reset processing state when changing messenger
+                    resetProcessingState();
+                    
+                    if (selectedMessenger) {
+                        // Load fresh data for the selected messenger
+                        await loadServices(selectedMessengerId);
+                        await loadTopups(selectedMessengerId);
+                    }
+                    
+                    // Render app after all data is loaded
+                    renderApp();
+                });
+            }
+
+            const addMessengerButton = document.getElementById('add-messenger-button');
+            if (addMessengerButton) {
+                addMessengerButton.addEventListener('click', handleAddMessenger);
+            }
+
+            const serviceForm = document.getElementById('service-form');
+            if (serviceForm) {
+                serviceForm.addEventListener('submit', handleRegisterService);
+            }
+
+            const topupForm = document.getElementById('topup-form');
+            if (topupForm) {
+                topupForm.addEventListener('submit', handleAddTopup);
+            }
+
+            const deleteMessengerButton = document.getElementById('delete-messenger-button');
+            if (deleteMessengerButton && selectedMessenger) {
+                deleteMessengerButton.addEventListener('click', () => {
+                    handleDeleteMessenger(selectedMessenger.id, selectedMessenger.name);
+                });
+            }
+
+            const exportButton = document.getElementById('export-button');
+            if (exportButton) {
+                exportButton.addEventListener('click', exportData);
+            }
+
+            const importButton = document.getElementById('import-button');
+            if (importButton) {
+                importButton.addEventListener('click', importData);
+            }
+        }
+
+        // --- Event Handlers ---
+        const handleAddMessenger = () => {
+            showModal(
+                'input',
+                'Ingrese el nombre del nuevo mensajero:',
+                async (messengerName) => {
+                    if (messengerName && messengerName.trim()) {
+                        try {
+                            const newMessenger = {
+                                name: messengerName.trim(),
+                                balance: 0
+                            };
+                            
+                            await saveMessenger(newMessenger);
+                            messengers.push(newMessenger);
+                            showModal('message', `Mensajero '${messengerName}' agregado con éxito a Firebase.`);
+                            renderApp();
+                        } catch (e) {
+                            console.error("Error adding messenger: ", e);
+                            showModal('message', "Error al agregar el mensajero a Firebase.");
+                        }
+                    } else {
+                        showModal('message', "El nombre del mensajero no puede estar vacío.");
+                    }
+                },
+                'Nombre del mensajero',
+                'Nombre:'
+            );
+        };
+
+        const handleDeleteMessenger = (messengerId, messengerName) => {
+            showModal(
+                'confirm',
+                `¿Estás seguro de que quieres eliminar al mensajero '${messengerName}' y todos sus datos?`,
+                async () => {
+                    try {
+                        // Remove from messengers array
+                        messengers = messengers.filter(m => m.id !== messengerId);
+                        
+                        // Delete from Firebase
+                        await deleteFromFirebase('messengers', messengerId);
+                        
+                        // Delete related services and topups from Firebase
+                        const servicesToDelete = servicesHistory.filter(s => s.messengerId === messengerId);
+                        const topupsToDelete = topupsHistory.filter(t => t.messengerId === messengerId);
+                        
+                        for (const service of servicesToDelete) {
+                            await deleteFromFirebase('services', service.id);
+                        }
+                        
+                        for (const topup of topupsToDelete) {
+                            await deleteFromFirebase('topups', topup.id);
+                        }
+
+                        showModal('message', `Mensajero '${messengerName}' y todos sus datos eliminados de Firebase.`);
+                        if (selectedMessengerId === messengerId) {
+                            selectedMessengerId = '';
+                            selectedMessenger = null;
+                            servicesHistory = [];
+                            topupsHistory = [];
+                        }
+                        renderApp();
+                    } catch (e) {
+                        console.error("Error deleting messenger:", e);
+                        showModal('message', "Error al eliminar el mensajero de Firebase.");
+                    }
+                }
+            );
+        };
+
+        async function handleRegisterService(e) {
+            e.preventDefault();
+            
+            // Prevent duplicate submissions
+            if (isProcessing) {
+                showModal('message', 'Ya se está procesando una transacción. Por favor, espere.');
+                return;
+            }
+            
+            isProcessing = true;
+            setProcessingTimeout(); // Set safety timeout
+            
+            const serviceDescriptionInput = document.getElementById('service-description');
+            const serviceAmountInput = document.getElementById('service-amount');
+
+            if (!selectedMessengerId || !serviceDescriptionInput.value.trim() || !serviceAmountInput.value) {
+                showModal('message', 'Por favor, complete todos los campos de servicio.');
+                resetProcessingState();
+                return;
+            }
+
+            const amount = parseFloat(serviceAmountInput.value);
+            if (isNaN(amount) || amount <= 0) {
+                showModal('message', 'El monto del servicio debe ser un número positivo.');
+                resetProcessingState();
+                return;
+            }
+
+            try {
+                // Add service to Firebase first
+                const newService = {
+                    description: serviceDescriptionInput.value.trim(),
+                    amount: amount
+                };
+                await saveService(newService);
+                
+                // Reload services to get the updated list
+                await loadServices(selectedMessengerId);
+                
+                // Calculate new balance after reloading data
+                const newBalance = recalculateMessengerBalance(selectedMessengerId);
+
+                showModal('message', `Servicio registrado para ${selectedMessenger.name} en Firebase. Saldo actual: ${newBalance.toFixed(2)}.`);
+                clearForms();
+                
+                // Reset processing state before rendering
+                resetProcessingState();
+                renderApp();
+            } catch (e) {
+                console.error("Error registering service: ", e);
+                showModal('message', "Error al registrar el servicio en Firebase.");
+                resetProcessingState();
+            }
+        }
+
+        async function handleAddTopup(e) {
+            e.preventDefault();
+            
+            // Prevent duplicate submissions
+            if (isProcessing) {
+                showModal('message', 'Ya se está procesando una transacción. Por favor, espere.');
+                return;
+            }
+            
+            isProcessing = true;
+            setProcessingTimeout(); // Set safety timeout
+            
+            const topupAmountInput = document.getElementById('topup-amount');
+
+            if (!selectedMessengerId || !topupAmountInput.value) {
+                showModal('message', 'Por favor, ingrese el monto de la recarga.');
+                resetProcessingState();
+                return;
+            }
+
+            const amount = parseFloat(topupAmountInput.value);
+            if (isNaN(amount) || amount <= 0) {
+                showModal('message', 'El monto de la recarga debe ser un número positivo.');
+                resetProcessingState();
+                return;
+            }
+
+            try {
+                // Add topup to Firebase first
+                const newTopup = {
+                    amount: amount
+                };
+                await saveTopup(newTopup);
+                
+                // Reload topups to get the updated list
+                await loadTopups(selectedMessengerId);
+                
+                // Calculate new balance after reloading data
+                const newBalance = recalculateMessengerBalance(selectedMessengerId);
+
+                showModal('message', `Recarga de ${amount.toFixed(2)} agregada para ${selectedMessenger.name} en Firebase. Saldo actual: ${newBalance.toFixed(2)}.`);
+                clearForms();
+                
+                // Reset processing state before rendering
+                resetProcessingState();
+                renderApp();
+            } catch (e) {
+                console.error("Error adding top-up: ", e);
+                showModal('message', "Error al agregar la recarga en Firebase.");
+                resetProcessingState();
+            }
+        }
+
+        // --- Initialization ---
+        window.onload = async function () {
+            try {
+                // Wait for Firebase to be ready
+                let attempts = 0;
+                while (!window.db && attempts < 50) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+                
+                if (!window.db) {
+                    throw new Error('Firebase no se inicializó correctamente');
+                }
+                
+                // Load data from Firebase
+                await loadMessengers();
+                
+                isInitialized = true;
+                renderApp();
+            } catch (error) {
+                console.error("Error initializing application:", error);
+                errorMessage = "Error al inicializar la aplicación con Firebase. Por favor, verifica tu configuración.";
+                renderApp();
+            }
+        };
+    </script>
+</body>
+</html>
