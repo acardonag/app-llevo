@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Mensajero - Llevo</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Local CSS -->
+    <link rel="stylesheet" href="styles.css">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Import Firebase configuration
+        import { firebaseConfig } from './firebase-config.js';
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Make Firebase available globally
+        window.db = db;
+        window.FirebaseSDK = {
+            collection,
+            getDocs,
+            query,
+            where
+        };
+    </script>
+</head>
+<body class="min-h-screen p-2 sm:p-4 flex flex-col items-center bg-llevo-primary">
+    <div id="app-root" class="w-full max-w-md mx-auto px-4 sm:px-6">
+        <!-- Llevo Header with Logo -->
+        <div class="llevo-header w-full text-center">
+            <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo mx-auto mb-2">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Llevo</h1>
+            <p class="text-xs sm:text-sm text-gray-700">Consulta de Mensajeros</p>
+        </div>
+
+        <!-- Consulta por Celular -->
+        <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
+            <h2 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Consulta tu Saldo</h2>
+            
+            <div class="mb-4">
+                <label for="phone-input" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
+                    📱 Ingresa tu número de celular:
+                </label>
+                <input
+                    type="tel"
+                    id="phone-input"
+                    class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
+                    placeholder="Ej: 3001234567"
+                    maxlength="13"
+                />
+            </div>
+            
+            <button
+                id="query-button"
+                class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+            >
+                🔍 Consultar Saldo
+            </button>
+        </div>
+
+        <!-- Resultado de la Consulta -->
+        <div id="query-result" class="hidden">
+            <!-- El contenido se generará dinámicamente -->
+        </div>
+
+        <!-- Footer -->
+        <div class="llevo-footer w-full text-center">
+            <p class="text-xs text-white opacity-90">© 2024 Llevo - Consulta de Mensajeros</p>
+        </div>
+    </div>
+
+    <script>
+        // Global state variables
+        let currentMessenger = null;
+        let servicesHistory = [];
+        let topupsHistory = [];
+
+        // DOM elements
+        const phoneInput = document.getElementById('phone-input');
+        const queryButton = document.getElementById('query-button');
+        const queryResult = document.getElementById('query-result');
+
+        // Utility Functions
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        function getFormattedDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('es-CO', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Query Functions
+        async function queryMessengerByPhone(phoneNumber) {
+            try {
+                // Limpiar el número de teléfono
+                const cleanPhone = phoneNumber.replace(/\s/g, '');
+                
+                // Buscar mensajero por número de celular
+                const q = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'messengers'),
+                    FirebaseSDK.where('phoneNumber', '==', cleanPhone)
+                );
+                
+                const querySnapshot = await FirebaseSDK.getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    return null;
+                }
+                
+                const messengerDoc = querySnapshot.docs[0];
+                return { id: messengerDoc.id, ...messengerDoc.data() };
+            } catch (error) {
+                console.error('Error querying messenger:', error);
+                throw error;
+            }
+        }
+
+        async function loadMessengerHistory(messengerId) {
+            try {
+                // Cargar servicios
+                const servicesQuery = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'services'),
+                    FirebaseSDK.where('messengerId', '==', messengerId)
+                );
+                const servicesSnapshot = await FirebaseSDK.getDocs(servicesQuery);
+                servicesHistory = [];
+                servicesSnapshot.forEach((doc) => {
+                    servicesHistory.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Cargar recargas
+                const topupsQuery = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'topups'),
+                    FirebaseSDK.where('messengerId', '==', messengerId)
+                );
+                const topupsSnapshot = await FirebaseSDK.getDocs(topupsQuery);
+                topupsHistory = [];
+                topupsSnapshot.forEach((doc) => {
+                    topupsHistory.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Ordenar por fecha
+                servicesHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                topupsHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+            } catch (error) {
+                console.error('Error loading history:', error);
+                throw error;
+            }
+        }
+
+        function calculateBalance() {
+            let balance = 0;
+            
+            // Sumar recargas
+            topupsHistory.forEach(topup => {
+                balance += topup.amount;
+            });
+            
+            // Restar servicios
+            servicesHistory.forEach(service => {
+                balance -= service.amount;
+            });
+            
+            return balance;
+        }
+
+        function renderQueryResult() {
+            if (!currentMessenger) {
+                queryResult.innerHTML = `
+                    <div class="bg-red-50 p-4 rounded-xl border border-red-200 mb-6">
+                        <p class="text-red-800 text-center">No se encontró un mensajero con ese número de celular.</p>
+                    </div>
+                `;
+                queryResult.classList.remove('hidden');
+                return;
+            }
+
+            const balance = calculateBalance();
+            
+            // Determinar el color del saldo y si mostrar alertas
+            let balanceColor = 'text-green-600';
+            let balanceBackground = 'bg-llevo-primary-light';
+            let balanceBorder = 'border-llevo-primary';
+            
+            if (balance < 0) {
+                balanceColor = 'text-red-600';
+                balanceBackground = 'bg-red-50';
+                balanceBorder = 'border-red-300';
+            } else if (balance < 5000) {
+                balanceColor = 'text-orange-600';
+                balanceBackground = 'bg-orange-50';
+                balanceBorder = 'border-orange-300';
+            }
+            
+            queryResult.innerHTML = `
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
+                    <h3 class="text-lg sm:text-xl font-bold mb-4 text-center text-llevo-primary">
+                        📱 ${currentMessenger.name}
+                    </h3>
+                    
+                    <!-- Saldo Actual -->
+                    <div class="${balanceBackground} p-4 rounded-xl shadow-inner mb-6 border ${balanceBorder}">
+                        <div class="flex items-center justify-center space-x-3">
+                            <p class="text-lg sm:text-xl font-bold text-llevo-primary">
+                                Saldo Actual: <span class="${balanceColor}">${formatCurrency(balance)}</span>
+                            </p>
+                            ${balance < 0 ? `
+                                <span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">
+                                    CRÍTICO
+                                </span>
+                            ` : balance < 5000 ? `
+                                <span class="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    BAJO
+                                </span>
+                            ` : `
+                                <span class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    NORMAL
+                                </span>
+                            `}
+                        </div>
+                    </div>
+                    
+                    <!-- Alertas de Saldo -->
+                    ${balance < 0 ? `
+                        <div class="bg-red-100 border border-red-300 rounded-xl p-4 mb-4 balance-alert">
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-shrink-0">
+                                    <span class="text-2xl">🚨</span>
+                                </div>
+                                <div class="flex-1">
+                                    <h4 class="text-red-800 font-semibold text-lg">¡Atención Crítica!</h4>
+                                    <p class="text-red-700 text-base mb-2">Es necesario que hagas una recarga para poder seguir recibiendo servicios.</p>
+                                    <p class="text-red-600 text-sm">💡 <strong>Recomendación:</strong> Recarga mínimo $10.000 para salir del saldo negativo.</p>
+                                </div>
+                            </div>
+                        </div>
+                    ` : balance < 5000 ? `
+                        <div class="bg-orange-100 border border-orange-300 rounded-xl p-4 mb-4 balance-alert">
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-shrink-0">
+                                    <span class="text-2xl">⚠️</span>
+                                </div>
+                                <div class="flex-1">
+                                    <h4 class="text-orange-800 font-semibold text-lg">Saldo Bajo</h4>
+                                    <p class="text-orange-700 text-base mb-2">Sr. mensajero, su saldo está a punto de agotarse. Lo invitamos a recargar.</p>
+                                    <p class="text-orange-600 text-sm">💡 <strong>Recomendación:</strong> Recarga mínimo $5.000 para mantener un saldo saludable.</p>
+                                </div>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="bg-green-100 border border-green-300 rounded-xl p-4 mb-4 balance-alert">
+                            <div class="flex items-center space-x-3">
+                                <div class="flex-shrink-0">
+                                    <span class="text-2xl">✅</span>
+                                </div>
+                                <div class="flex-1">
+                                    <h4 class="text-green-800 font-semibold text-lg">Saldo Saludable</h4>
+                                    <p class="text-green-700 text-base">¡Excelente! Tu saldo está en un nivel óptimo para recibir servicios.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `}
+
+                    <!-- Historial de Movimientos -->
+                    <div class="mb-4">
+                        <h4 class="text-base font-semibold mb-3 text-gray-700">📊 Historial de Movimientos</h4>
+                        
+                        ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
+                            <p class="text-gray-500 text-center py-4">No hay movimientos registrados.</p>
+                        ` : `
+                            <!-- Servicios -->
+                            ${servicesHistory.length > 0 ? `
+                                <div class="mb-4">
+                                    <h5 class="text-sm font-semibold mb-2 text-llevo-secondary">💼 Servicios</h5>
+                                    <ul class="space-y-1">
+                                        ${servicesHistory.map(service => `
+                                            <li class="text-sm text-gray-700 p-2 bg-gray-50 rounded">
+                                                <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary font-semibold">-${formatCurrency(service.amount)}</span>
+                                            </li>
+                                        `).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                            
+                            <!-- Recargas -->
+                            ${topupsHistory.length > 0 ? `
+                                <div class="mb-4">
+                                    <h5 class="text-sm font-semibold mb-2 text-llevo-primary">💳 Recargas</h5>
+                                    <ul class="space-y-1">
+                                        ${topupsHistory.map(topup => `
+                                            <li class="text-sm text-gray-700 p-2 bg-gray-50 rounded">
+                                                <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary font-semibold">+${formatCurrency(topup.amount)}</span>
+                                            </li>
+                                        `).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        `}
+                    </div>
+
+                    <!-- Botón para nueva consulta -->
+                    <button
+                        id="new-query-button"
+                        class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                    >
+                        🔍 Nueva Consulta
+                    </button>
+                </div>
+            `;
+            
+            queryResult.classList.remove('hidden');
+            
+            // Attach event listener for new query button
+            const newQueryButton = document.getElementById('new-query-button');
+            if (newQueryButton) {
+                newQueryButton.addEventListener('click', () => {
+                    resetQuery();
+                });
+            }
+        }
+
+        function resetQuery() {
+            currentMessenger = null;
+            servicesHistory = [];
+            topupsHistory = [];
+            phoneInput.value = '';
+            queryResult.classList.add('hidden');
+            phoneInput.focus();
+        }
+
+        // Event Listeners
+        queryButton.addEventListener('click', async () => {
+            const phoneNumber = phoneInput.value.trim();
+            
+            if (!phoneNumber) {
+                alert('Por favor, ingresa tu número de celular.');
+                return;
+            }
+            
+            // Validar formato de celular
+            const cleanPhone = phoneNumber.replace(/\s/g, '');
+            if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+                alert('El número de celular debe tener entre 10 y 13 dígitos.');
+                return;
+            }
+            
+            try {
+                queryButton.disabled = true;
+                queryButton.textContent = '🔍 Consultando...';
+                
+                // Buscar mensajero
+                currentMessenger = await queryMessengerByPhone(cleanPhone);
+                
+                if (currentMessenger) {
+                    // Cargar historial
+                    await loadMessengerHistory(currentMessenger.id);
+                }
+                
+                // Mostrar resultado
+                renderQueryResult();
+                
+            } catch (error) {
+                console.error('Error in query:', error);
+                alert('Error al consultar. Por favor, intenta de nuevo.');
+            } finally {
+                queryButton.disabled = false;
+                queryButton.textContent = '🔍 Consultar Saldo';
+            }
+        });
+
+        // Permitir consulta con Enter
+        phoneInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                queryButton.click();
+            }
+        });
+
+        // Formatear número de teléfono mientras se escribe
+        phoneInput.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 0) {
+                // Formatear como número colombiano
+                if (value.length <= 3) {
+                    value = value;
+                } else if (value.length <= 6) {
+                    value = value.slice(0, 3) + ' ' + value.slice(3);
+                } else if (value.length <= 10) {
+                    value = value.slice(0, 3) + ' ' + value.slice(3, 6) + ' ' + value.slice(6);
+                } else {
+                    value = value.slice(0, 3) + ' ' + value.slice(3, 6) + ' ' + value.slice(6, 10) + ' ' + value.slice(10);
+                }
+            }
+            e.target.value = value;
+        });
+    </script>
+</body>
+</html>

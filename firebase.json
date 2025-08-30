@@ -8,6 +8,10 @@
     ],
     "rewrites": [
       {
+        "source": "/consulta",
+        "destination": "/messenger-query.html"
+      },
+      {
         "source": "**",
         "destination": "/App.html"
       }

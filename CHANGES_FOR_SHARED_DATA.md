@@ -35,6 +35,18 @@ Los datos de los mensajeros estaban siendo filtrados por `userId`, lo que causab
 - **Después**: No asigna `userId` específico, mantiene los datos como compartidos
 - **Resultado**: Los datos importados son accesibles para todos los administradores
 
+### 13. Modal Mejorado para Registro de Mensajeros 🔧✨
+- **Modal personalizado**: Reemplazó el sistema de modales anidados problemático
+- **Formulario único**: Captura nombre y celular en un solo modal
+- **Validaciones en tiempo real**: Verifica campos obligatorios y formato de celular
+- **Formateo automático**: Número de teléfono se formatea mientras se escribe
+- **Mejor UX**: Botones claros, animaciones suaves, cierre con Escape o clic fuera
+- **Manejo de errores**: Mensajes claros y estado de carga durante el proceso
+- **Validación de duplicados**: Verifica que el número de celular no esté ya registrado
+- **Validación en tiempo real**: Muestra feedback visual mientras se escribe el número
+- **Verificación doble**: Revisa tanto en memoria local como en Firebase
+- **Mensajes de éxito**: Confirma exitosamente el registro del mensajero
+
 ## Nuevas Mejoras Implementadas
 
 ### 7. Auditoría de Modificaciones
@@ -66,6 +78,26 @@ Los datos de los mensajeros estaban siendo filtrados por `userId`, lo que causab
 - **Posición del cursor**: Mantiene la posición del cursor de manera inteligente
 - **Estilos visuales**: Inputs formateados tienen estilos especiales para mejor UX
 
+### 14. Sistema de Consulta Pública por Celular 📱✨
+- **Campo de celular obligatorio**: Al crear mensajeros se solicita número de celular
+- **Validación de formato**: Verifica que el celular tenga entre 10-13 dígitos
+- **Página pública**: Nueva página `messenger-query.html` para consultas sin autenticación
+- **Consulta por celular**: Los mensajeros pueden consultar su saldo usando su número
+- **Información completa**: Muestra saldo actual, historial de servicios y recargas
+- **URL amigable**: Accesible en `/consulta` desde cualquier dispositivo
+- **Formato de teléfono**: Formateo automático mientras se escribe (300 123 4567)
+- **Enlace desde admin**: Botón en la interfaz de administración para acceder a consultas
+
+### 15. Sistema de Alertas de Saldo Inteligente 🚨✨
+- **Alertas automáticas**: Se muestran según el nivel de saldo del mensajero
+- **Saldo crítico (< 0)**: Alerta roja con icono 🚨 y mensaje de recarga obligatoria
+- **Saldo bajo (< 5000)**: Alerta naranja con icono ⚠️ y recomendación de recarga
+- **Saldo saludable (≥ 5000)**: Mensaje verde con icono ✅ confirmando estado óptimo
+- **Badges de estado**: Indicadores visuales NORMAL, BAJO, CRÍTICO con colores diferenciados
+- **Recomendaciones específicas**: Sugerencias de monto mínimo según el nivel de saldo
+- **Animaciones suaves**: Efectos de entrada y hover para mejor experiencia visual
+- **Colores contextuales**: El saldo cambia de color según el nivel (verde, naranja, rojo)
+
 ## Beneficios de los Cambios
 
 1. **Datos Unificados**: Ambos administradores ven exactamente la misma información
@@ -77,6 +109,10 @@ Los datos de los mensajeros estaban siendo filtrados por `userId`, lo que causab
 7. **Transparencia**: Los usuarios pueden ver quién hizo cada cambio
 8. **UX Mejorada**: Formateo automático de números mientras se escriben
 9. **Precisión**: Eliminación de errores de formato en inputs monetarios
+10. **Alertas Proactivas**: Los mensajeros reciben notificaciones claras sobre su estado de saldo
+11. **Prevención de Interrupciones**: Alertas tempranas evitan que el saldo llegue a niveles críticos
+12. **Comunicación Clara**: Mensajes específicos y recomendaciones útiles para cada situación
+13. **Experiencia Visual**: Indicadores de color y badges que facilitan la comprensión rápida
 
 ## Consideraciones de Seguridad
 
@@ -88,8 +124,10 @@ Los datos de los mensajeros estaban siendo filtrados por `userId`, lo que causab
 
 ## Archivos Modificados
 
-- `App.html`: Líneas 310, 326-334, 371-378, 412-419, 427-428, 474, 479, 486, 162-173, 257-280, 299-310, 635, 660, 695, 720, 733, 972, 1025, 162-200, 258-275, 912-920
-- `styles.css`: Nuevos estilos para inputs monetarios formateados
+- `App.html`: Líneas 310, 326-334, 371-378, 412-419, 427-428, 474, 479, 486, 162-173, 257-280, 299-310, 635, 660, 695, 720, 733, 972, 1025, 162-200, 258-275, 912-920, 959-990, 162-200
+- `styles.css`: Nuevos estilos para inputs monetarios formateados, modal personalizado y alertas de saldo
+- `firebase.json`: Nueva regla de rewrite para `/consulta`
+- `messenger-query.html`: Nueva página pública para consultas de mensajeros con sistema de alertas inteligente
 
 ## Notas Importantes
 

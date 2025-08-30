@@ -648,3 +648,75 @@ svg {
     background-color: #ffffff;
     border-color: #2a9d8f;
 }
+
+/* Estilos para el modal personalizado de agregar mensajero */
+.add-messenger-modal {
+    animation: fadeIn 0.3s ease-out;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+/* Estilos para alertas de saldo en la página de consulta */
+.balance-alert {
+    animation: slideInDown 0.4s ease-out;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.balance-alert:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease-in-out;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Animación para el badge crítico */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.add-messenger-modal .bg-white {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { 
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Hover states para botones del modal */
+.bg-gray-300:hover {
+    background-color: #d1d5db;
+}
+
+.bg-llevo-secondary:hover {
+    background-color: #238f82;
+}

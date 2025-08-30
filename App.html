@@ -240,6 +240,40 @@
             return parseInt(formattedValue.replace(/[^\d]/g, ''), 10);
         }
 
+        // Función para verificar si un número de celular ya existe
+        async function checkPhoneNumberExists(phoneNumber) {
+            try {
+                // Verificar primero en memoria local (más rápido)
+                const existingLocal = messengers.find(m => m.phoneNumber === phoneNumber);
+                if (existingLocal) {
+                    return { exists: true, messenger: existingLocal, source: 'local' };
+                }
+                
+                // Verificar en Firebase para asegurar consistencia
+                const q = FirebaseSDK.query(
+                    FirebaseSDK.collection(db, 'messengers'),
+                    FirebaseSDK.where('phoneNumber', '==', phoneNumber)
+                );
+                const querySnapshot = await FirebaseSDK.getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const existingDB = querySnapshot.docs[0].data();
+                    return { exists: true, messenger: existingDB, source: 'database' };
+                }
+                
+                return { exists: false, messenger: null, source: null };
+            } catch (error) {
+                console.warn('Error verificando duplicados en Firebase:', error);
+                // En caso de error, solo confiamos en la validación local
+                const existingLocal = messengers.find(m => m.phoneNumber === phoneNumber);
+                return { 
+                    exists: existingLocal !== undefined, 
+                    messenger: existingLocal, 
+                    source: 'local-only' 
+                };
+            }
+        }
+
         function generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
         }
@@ -697,7 +731,7 @@
                                     class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
                                 >
                                     <option value="">-- Seleccionar --</option>
-                                    ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}${m.createdByName ? ` (Creado por: ${m.createdByName})` : ''}</option>`).join('')}
+                                    ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}${m.phoneNumber ? ` - ${m.phoneNumber}` : ''}${m.createdByName ? ` (Creado por: ${m.createdByName})` : ''}</option>`).join('')}
                                 </select>
                                 <button
                                     id="add-messenger-button"
@@ -731,8 +765,13 @@
                                 <p class="text-lg sm:text-xl font-bold text-center text-llevo-secondary">
                                     Saldo Actual: <span class="text-green-600">${formatCurrency(recalculateMessengerBalance(selectedMessengerId))}</span>
                                 </p>
-                                ${selectedMessenger.createdByName ? `
+                                ${selectedMessenger.phoneNumber ? `
                                     <p class="text-sm text-center text-gray-600 mt-2">
+                                        📱 Celular: ${selectedMessenger.phoneNumber}
+                                    </p>
+                                ` : ''}
+                                ${selectedMessenger.createdByName ? `
+                                    <p class="text-sm text-center text-gray-600">
                                         Creado por: ${selectedMessenger.createdByName}
                                         ${selectedMessenger.createdAt ? ` el ${getFormattedDate(selectedMessenger.createdAt)}` : ''}
                                     </p>
@@ -891,6 +930,20 @@
                             </button>
                         </div>
                     </div>
+                    
+                    <!-- Enlace a Consulta Pública -->
+                    <div class="bg-llevo-primary-dark p-3 rounded-xl mb-3">
+                        <h4 class="text-sm font-semibold text-white mb-2">🔍 Consulta Pública</h4>
+                        <p class="text-xs text-white opacity-90 mb-2">Los mensajeros pueden consultar su saldo aquí</p>
+                        <a
+                            href="/consulta"
+                            target="_blank"
+                            class="inline-block bg-white text-llevo-primary-dark px-4 py-2 rounded-lg font-semibold hover:bg-gray-100 transition duration-200"
+                        >
+                            📱 Consultar Saldo
+                        </a>
+                    </div>
+                    
                     <p class="text-xs text-white opacity-90">© 2024 Llevo - Gestión de Mensajeros</p>
                 </div>
             `;
@@ -989,32 +1042,267 @@
 
         // --- Event Handlers ---
         const handleAddMessenger = () => {
-            showModal(
-                'input',
-                'Ingrese el nombre del nuevo mensajero:',
-                async (messengerName) => {
-                    if (messengerName && messengerName.trim()) {
-                        try {
-                            const newMessenger = {
-                                name: messengerName.trim(),
-                                balance: 0
-                            };
+            // Crear un modal personalizado para agregar mensajeros
+            const modalId = 'add-messenger-modal-' + Date.now();
+            const modalHTML = `
+                <div id="${modalId}" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 add-messenger-modal">
+                    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md mx-4">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4 text-center">📱 Agregar Nuevo Mensajero</h3>
+                        
+                        <form id="add-messenger-form">
+                            <div class="mb-4">
+                                <label for="messenger-name" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Nombre del Mensajero:
+                                </label>
+                                <input
+                                    type="text"
+                                    id="messenger-name"
+                                    class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                    placeholder="Ej: Juan Pérez"
+                                    required
+                                />
+                            </div>
                             
-                            await saveMessenger(newMessenger);
-                            messengers.push(newMessenger);
-                            showModal('message', `Mensajero '${messengerName}' agregado con éxito a Firebase.`);
-                            renderApp();
-                        } catch (e) {
-                            console.error("Error adding messenger: ", e);
-                            showModal('message', "Error al agregar el mensajero a Firebase.");
-                        }
+                            <div class="mb-6">
+                                <label for="messenger-phone" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Número de Celular:
+                                </label>
+                                <input
+                                    type="tel"
+                                    id="messenger-phone"
+                                    class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                    placeholder="Ej: 3001234567"
+                                    maxlength="13"
+                                    required
+                                />
+                                <p class="text-xs text-gray-500 mt-1">Formato: 10-13 dígitos</p>
+                            </div>
+                            
+                            <div class="flex space-x-3">
+                                <button
+                                    type="button"
+                                    id="cancel-add-messenger"
+                                    class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-400 transition duration-200"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    id="submit-add-messenger"
+                                    class="flex-1 bg-llevo-secondary text-white px-4 py-2 rounded-lg font-medium hover:bg-llevo-secondary-hover transition duration-200"
+                                >
+                                    Agregar Mensajero
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
+            // Agregar el modal al DOM
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // Obtener referencias a los elementos del modal
+            const modal = document.getElementById(modalId);
+            const form = document.getElementById('add-messenger-form');
+            const nameInput = document.getElementById('messenger-name');
+            const phoneInput = document.getElementById('messenger-phone');
+            const cancelButton = document.getElementById('cancel-add-messenger');
+            const submitButton = document.getElementById('submit-add-messenger');
+            
+            // Formatear número de teléfono mientras se escribe
+            phoneInput.addEventListener('input', (e) => {
+                let value = e.target.value.replace(/\D/g, '');
+                if (value.length > 0) {
+                    // Formatear como número colombiano
+                    if (value.length <= 3) {
+                        value = value;
+                    } else if (value.length <= 6) {
+                        value = value.slice(0, 3) + ' ' + value.slice(3);
+                    } else if (value.length <= 10) {
+                        value = value.slice(0, 3) + ' ' + value.slice(3, 6) + ' ' + value.slice(6);
                     } else {
-                        showModal('message', "El nombre del mensajero no puede estar vacío.");
+                        value = value.slice(0, 3) + ' ' + value.slice(3, 6) + ' ' + value.slice(6, 10) + ' ' + value.slice(10);
                     }
-                },
-                'Nombre del mensajero',
-                'Nombre:'
-            );
+                }
+                e.target.value = value;
+                
+                // Validar duplicados en tiempo real si el número tiene la longitud correcta
+                const cleanValue = value.replace(/\s/g, '');
+                if (cleanValue.length >= 10 && cleanValue.length <= 13) {
+                    validatePhoneInRealTime(cleanValue);
+                } else {
+                    clearPhoneValidation();
+                }
+            });
+            
+            // Función para validar duplicados en tiempo real
+            async function validatePhoneInRealTime(phoneNumber) {
+                try {
+                    const duplicateCheck = await checkPhoneNumberExists(phoneNumber);
+                    if (duplicateCheck.exists) {
+                        showPhoneValidationError(`⚠️ Este número ya está registrado por: ${duplicateCheck.messenger.name}`);
+                    } else {
+                        showPhoneValidationSuccess('✅ Número disponible');
+                    }
+                } catch (error) {
+                    console.warn('Error en validación en tiempo real:', error);
+                }
+            }
+            
+            // Función para mostrar error de validación
+            function showPhoneValidationError(message) {
+                clearPhoneValidation();
+                const errorDiv = document.createElement('div');
+                errorDiv.id = 'phone-validation-error';
+                errorDiv.className = 'text-red-600 text-sm mt-1 flex items-center';
+                errorDiv.innerHTML = message;
+                phoneInput.parentNode.appendChild(errorDiv);
+                phoneInput.classList.add('border-red-500');
+            }
+            
+            // Función para mostrar éxito de validación
+            function showPhoneValidationSuccess(message) {
+                clearPhoneValidation();
+                const successDiv = document.createElement('div');
+                successDiv.id = 'phone-validation-success';
+                successDiv.className = 'text-green-600 text-sm mt-1 flex items-center';
+                successDiv.innerHTML = message;
+                phoneInput.parentNode.appendChild(successDiv);
+                phoneInput.classList.add('border-green-500');
+            }
+            
+            // Función para limpiar validaciones
+            function clearPhoneValidation() {
+                const errorDiv = document.getElementById('phone-validation-error');
+                const successDiv = document.getElementById('phone-validation-success');
+                if (errorDiv) errorDiv.remove();
+                if (successDiv) successDiv.remove();
+                phoneInput.classList.remove('border-red-500', 'border-green-500');
+            }
+            
+            // Función para cerrar el modal de manera segura
+            function closeModal() {
+                // Limpiar formulario
+                if (form) {
+                    form.reset();
+                }
+                // Limpiar validaciones visuales
+                clearPhoneValidation();
+                
+                // Agregar animación de salida
+                if (modal) {
+                    modal.style.opacity = '0';
+                    modal.style.transform = 'scale(0.95)';
+                    
+                    // Remover después de la animación
+                    setTimeout(() => {
+                        if (modal && modal.parentNode) {
+                            modal.remove();
+                        }
+                    }, 200);
+                }
+                
+                // Limpiar event listeners
+                document.removeEventListener('keydown', handleEscape);
+            }
+            
+            // Manejar cancelación
+            cancelButton.addEventListener('click', closeModal);
+            
+            // Manejar envío del formulario
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const name = nameInput.value.trim();
+                const phone = phoneInput.value.trim();
+                
+                // Validaciones básicas
+                if (!name) {
+                    alert('Por favor, ingresa el nombre del mensajero.');
+                    nameInput.focus();
+                    return;
+                }
+                
+                if (!phone) {
+                    alert('Por favor, ingresa el número de celular.');
+                    phoneInput.focus();
+                    return;
+                }
+                
+                // Validar formato de celular
+                const cleanPhone = phone.replace(/\s/g, '');
+                if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+                    alert('El número de celular debe tener entre 10 y 13 dígitos.');
+                    phoneInput.focus();
+                    return;
+                }
+                
+                // Deshabilitar botón durante el proceso
+                submitButton.disabled = true;
+                submitButton.textContent = 'Verificando...';
+                
+                try {
+                    // Verificar si el número de celular ya existe
+                    submitButton.textContent = 'Verificando duplicados...';
+                    const duplicateCheck = await checkPhoneNumberExists(cleanPhone);
+                    
+                    if (duplicateCheck.exists) {
+                        const sourceText = duplicateCheck.source === 'local' ? 'en memoria local' : 'en la base de datos';
+                        alert(`Ya existe un mensajero registrado con el número ${cleanPhone}.\n\nMensajero: ${duplicateCheck.messenger.name}\n\nFuente: ${sourceText}`);
+                        phoneInput.focus();
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Agregar Mensajero';
+                        return;
+                    }
+                    
+                    // Cambiar texto del botón para indicar que se está guardando
+                    submitButton.textContent = 'Guardando...';
+                    
+                    const newMessenger = {
+                        name: name,
+                        phoneNumber: cleanPhone,
+                        balance: 0
+                    };
+                    
+                    await saveMessenger(newMessenger);
+                    messengers.push(newMessenger);
+                    
+                    // Cerrar modal y mostrar confirmación
+                    closeModal();
+                    
+                    // Mostrar mensaje de éxito usando showModal
+                    showModal('message', `✅ Mensajero '${name}' con celular ${cleanPhone} agregado con éxito a Firebase.`);
+                    
+                    // Actualizar la interfaz
+                    renderApp();
+                    
+                } catch (error) {
+                    console.error("Error adding messenger: ", error);
+                    alert("Error al agregar el mensajero a Firebase. Por favor, intenta de nuevo.");
+                } finally {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Agregar Mensajero';
+                }
+            });
+            
+            // Enfocar el primer input
+            nameInput.focus();
+            
+            // Cerrar modal con Escape
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    closeModal();
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+            
+            // Cerrar modal haciendo clic fuera de él
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
         };
 
         const handleDeleteMessenger = (messengerId, messengerName) => {

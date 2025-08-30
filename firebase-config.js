@@ -31,7 +31,8 @@ const ADMIN_USERS = [
     // Agrega aquí los emails de los usuarios administradores
     // Ejemplo: "admin@tudominio.com"
     "acg1606@gmail.com",
-    "ideamossoft@gmail.com"
+    "ideamossoft@gmail.com",
+    "daccortes27@gmail.com"
 ];
 
 export { firebaseConfig, ADMIN_USERS };
