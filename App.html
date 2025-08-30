@@ -36,36 +36,36 @@
         };
     </script>
 </head>
-<body class="min-h-screen p-4 flex flex-col items-center bg-gradient-to-br">
+<body class="min-h-screen p-2 sm:p-4 flex flex-col items-center bg-llevo-primary">
 
-    <div id="app-root" class="w-full max-w-md">
+    <div id="app-root" class="w-full max-w-md mx-auto px-4 sm:px-6">
         <!-- Content will be rendered here by JavaScript -->
-        <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-            <p class="text-xl text-gray-700">Cargando aplicación...</p>
+        <div class="flex items-center justify-center min-h-screen bg-llevo-primary p-4">
+            <p class="text-xl text-gray-800">Cargando aplicación...</p>
         </div>
     </div>
 
     <!-- Custom Modal Structure -->
     <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
-            <p id="modal-message" class="text-lg font-semibold text-gray-800 mb-4"></p>
+        <div class="bg-white p-4 sm:p-6 rounded-xl shadow-2xl w-full max-w-sm mx-4 text-center">
+            <p id="modal-message" class="text-base sm:text-lg font-semibold text-gray-800 mb-4"></p>
             <div id="modal-input-container" class="mb-4 hidden">
                 <label for="modal-input" id="modal-input-label" class="block text-sm font-medium text-gray-700 mb-1 text-left"></label>
                 <input
                     type="text"
                     id="modal-input"
-                    class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
                     placeholder=""
                 />
             </div>
-            <div id="modal-buttons" class="flex justify-center space-x-4">
-                <button id="modal-confirm-button" class="bg-red-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 hidden">
+            <div id="modal-buttons" class="flex flex-col sm:flex-row justify-center space-y-2 sm:space-y-0 sm:space-x-4">
+                <button id="modal-confirm-button" class="btn-llevo-primary px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200 hidden">
                     Sí
                 </button>
-                <button id="modal-accept-button" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 hidden">
+                <button id="modal-accept-button" class="btn-llevo-secondary px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 hidden">
                     Aceptar
                 </button>
-                <button id="modal-close-button" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200">
+                <button id="modal-close-button" class="btn-llevo-secondary px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200">
                     Cerrar
                 </button>
             </div>
@@ -456,64 +456,55 @@
         function renderApp() {
             if (errorMessage) {
                 appRoot.innerHTML = `
-                    <div class="flex items-center justify-center min-h-screen bg-red-100 text-red-700 p-4 rounded-xl shadow-md">
-                        <p class="text-xl">${errorMessage}</p>
-                    </div>
+                                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary-light text-gray-800 p-4 rounded-xl shadow-md border border-llevo-primary-dark">
+                    <p class="text-xl">${errorMessage}</p>
+                </div>
                 `;
                 return;
             }
 
             if (!isInitialized) {
                 appRoot.innerHTML = `
-                    <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-                        <p class="text-xl text-gray-700">Cargando aplicación...</p>
-                    </div>
+                                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary p-4">
+                    <p class="text-xl text-gray-800">Cargando aplicación...</p>
+                </div>
                 `;
                 return;
             }
 
             appRoot.innerHTML = `
+                <!-- Llevo Header with Logo -->
+                <div class="llevo-header w-full text-center">
+                    <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo mx-auto mb-2">
+                    <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Llevo</h1>
+                    <p class="text-xs sm:text-sm text-gray-700">Gestión de Mensajeros</p>
+                </div>
+
                 <!-- User ID display -->
-                <div class="w-full max-w-md text-center mb-4 p-2 bg-green-100 rounded-lg shadow-sm">
-                    <p class="text-sm text-green-700">Aplicación conectada a Firebase</p>
-                    <p class="text-xs font-mono text-green-900">Usuario: ${currentUserId}</p>
+                <div class="w-full text-center mb-4 p-2 bg-llevo-secondary-light rounded-lg shadow-sm border border-llevo-secondary">
+                    <p class="text-xs sm:text-sm text-llevo-secondary">Aplicación conectada a Firebase</p>
+                    <p class="text-xs font-mono text-llevo-secondary">Usuario: ${currentUserId}</p>
                 </div>
 
-                <!-- Export/Import Buttons -->
-                <div class="w-full max-w-md mb-4 flex space-x-2">
-                    <button
-                        id="export-button"
-                        class="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200 text-sm"
-                    >
-                        📤 Exportar
-                    </button>
-                    <button
-                        id="import-button"
-                        class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 text-sm"
-                    >
-                        📥 Importar
-                    </button>
-                </div>
-
-                <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md mb-6 border border-gray-200">
-                    <h1 class="text-3xl font-bold mb-6 text-center text-indigo-700">Gestionar Mensajeros</h1>
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
+                    <h1 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Gestionar Mensajeros</h1>
 
                     <!-- Select Messenger -->
                     <div class="mb-4">
-                        <label for="messenger-select" class="block text-lg font-semibold text-gray-700 mb-2">
+                        <label for="messenger-select" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
                             Selecciona un Mensajero:
                         </label>
-                        <div class="flex items-center space-x-2">
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
                             <select
                                 id="messenger-select"
-                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 ease-in-out bg-white"
+                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
                             >
                                 <option value="">-- Seleccionar --</option>
                                 ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}
                             </select>
                             <button
                                 id="add-messenger-button"
-                                class="bg-indigo-600 text-white p-3 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
+                                class="btn-llevo-secondary p-3 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
                                 title="Agregar nuevo mensajero"
                             >
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
@@ -522,48 +513,48 @@
                     </div>
 
                     ${selectedMessenger ? `
-                        <div class="mt-8">
-                            <h2 class="text-2xl font-semibold mb-4 text-center text-indigo-600">
+                        <div class="mt-6 sm:mt-8">
+                            <h2 class="text-xl sm:text-2xl font-semibold mb-4 text-center text-llevo-secondary">
                                 Resumen de ${selectedMessenger.name}
                             </h2>
-                            <div class="bg-indigo-50 p-4 rounded-xl shadow-inner mb-6 border border-indigo-200">
-                                <p class="text-xl font-bold text-center text-indigo-800">
+                            <div class="bg-llevo-secondary-light p-3 sm:p-4 rounded-xl shadow-inner mb-4 sm:mb-6 border border-llevo-secondary">
+                                <p class="text-lg sm:text-xl font-bold text-center text-llevo-secondary">
                                     Saldo Actual: <span class="text-green-600">$${recalculateMessengerBalance(selectedMessengerId).toFixed(2)}</span>
                                 </p>
                             </div>
 
                             <!-- Register Service Form -->
-                            <form id="service-form" class="bg-red-50 p-5 rounded-xl shadow-md mb-6 border border-red-200">
-                                <h3 class="text-xl font-semibold mb-4 text-red-700">Registrar Servicio</h3>
+                            <form id="service-form" class="bg-llevo-secondary-light p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-llevo-secondary">
+                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-secondary">Registrar Servicio</h3>
                                 <div class="mb-4">
-                                    <label for="service-description" class="block text-sm font-medium text-red-600 mb-1">
+                                    <label for="service-description" class="block text-sm font-medium text-llevo-secondary mb-1">
                                         Descripción del Servicio:
                                     </label>
-                                    <input
-                                        type="text"
-                                        id="service-description"
-                                        class="w-full p-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        placeholder="Ej: Entrega de paquete A"
-                                        required
-                                    />
+                                                                            <input
+                                            type="text"
+                                            id="service-description"
+                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                            placeholder="Ej: Entrega de paquete A"
+                                            required
+                                        />
                                 </div>
                                 <div class="mb-4">
-                                    <label for="service-amount" class="block text-sm font-medium text-red-600 mb-1">
+                                    <label for="service-amount" class="block text-sm font-medium text-llevo-secondary mb-1">
                                         Monto del Servicio ($):
                                     </label>
-                                    <input
-                                        type="number"
-                                        id="service-amount"
-                                        class="w-full p-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        placeholder="Ej: 15.00"
-                                        step="0.01"
-                                        required
-                                    />
+                                                                            <input
+                                            type="number"
+                                            id="service-amount"
+                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                            placeholder="Ej: 15.00"
+                                            step="0.01"
+                                            required
+                                        />
                                 </div>
                                 <button
                                     type="submit"
                                     id="service-submit-button"
-                                    class="w-full bg-red-600 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200"
+                                    class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
                                     ${isProcessing ? 'disabled' : ''}
                                 >
                                     ${isProcessing ? 'Procesando...' : 'Descontar Servicio'}
@@ -572,7 +563,7 @@
                                     <button
                                         type="button"
                                         onclick="resetProcessingState(); renderApp();"
-                                        class="w-full mt-2 bg-gray-500 text-white p-2 rounded-lg font-semibold shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
+                                        class="w-full mt-2 btn-llevo-secondary p-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
                                     >
                                         Cancelar Transacción
                                     </button>
@@ -580,25 +571,25 @@
                             </form>
 
                             <!-- Add Top-up Form -->
-                            <form id="topup-form" class="bg-green-50 p-5 rounded-xl shadow-md mb-6 border border-green-200">
-                                <h3 class="text-xl font-semibold mb-4 text-green-700">Agregar Recarga</h3>
+                            <form id="topup-form" class="bg-llevo-primary-light p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-llevo-primary">
+                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-primary">Agregar Recarga</h3>
                                 <div class="mb-4">
-                                    <label for="topup-amount" class="block text-sm font-medium text-green-600 mb-1">
+                                    <label for="topup-amount" class="block text-sm font-medium text-llevo-primary mb-1">
                                         Monto de la Recarga ($):
                                     </label>
-                                    <input
-                                        type="number"
-                                        id="topup-amount"
-                                        class="w-full p-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        placeholder="Ej: 50.00"
-                                        step="0.01"
-                                        required
-                                    />
+                                                                            <input
+                                            type="number"
+                                            id="topup-amount"
+                                            class="w-full p-2 border border-llevo-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-primary"
+                                            placeholder="Ej: 50.00"
+                                            step="0.01"
+                                            required
+                                        />
                                 </div>
                                 <button
                                     type="submit"
                                     id="topup-submit-button"
-                                    class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200"
+                                    class="w-full btn-llevo-primary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
                                     ${isProcessing ? 'disabled' : ''}
                                 >
                                     ${isProcessing ? 'Procesando...' : 'Recargar Saldo'}
@@ -607,7 +598,7 @@
                                     <button
                                         type="button"
                                         onclick="resetProcessingState(); renderApp();"
-                                        class="w-full mt-2 bg-gray-500 text-white p-2 rounded-lg font-semibold shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
+                                        class="w-full mt-2 btn-llevo-secondary p-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
                                     >
                                         Cancelar Transacción
                                     </button>
@@ -615,19 +606,19 @@
                             </form>
 
                             <!-- History of Services and Top-ups -->
-                            <div class="bg-white p-5 rounded-xl shadow-md mb-6 border border-gray-200">
-                                <h3 class="text-xl font-semibold mb-4 text-gray-700">Historial de Transacciones</h3>
+                            <div class="bg-white p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-gray-200">
+                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-secondary">Historial de Transacciones</h3>
                                 ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
-                                    <p class="text-gray-500">No hay transacciones registradas para este mensajero.</p>
+                                    <p class="text-llevo-secondary">No hay transacciones registradas para este mensajero.</p>
                                 ` : ''}
 
                                 ${servicesHistory.length > 0 ? `
                                     <div class="mb-4">
-                                        <h4 class="text-lg font-medium text-red-600 mb-2">Servicios Prestados</h4>
+                                        <h4 class="text-lg font-medium text-llevo-secondary mb-2">Servicios Prestados</h4>
                                         <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
                                             ${servicesHistory.map(service => `
                                                 <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-red-600">-${service.amount.toFixed(2)}</span>
+                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary">-${service.amount.toFixed(2)}</span>
                                                 </li>
                                             `).join('')}
                                         </ul>
@@ -636,11 +627,11 @@
 
                                 ${topupsHistory.length > 0 ? `
                                     <div>
-                                        <h4 class="text-lg font-medium text-green-600 mb-2">Recargas Realizadas</h4>
+                                        <h4 class="text-lg font-medium text-llevo-primary mb-2">Recargas Realizadas</h4>
                                         <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
                                             ${topupsHistory.map(topup => `
                                                 <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-green-600">+${topup.amount.toFixed(2)}</span>
+                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary">+${topup.amount.toFixed(2)}</span>
                                                 </li>
                                             `).join('')}
                                         </ul>
@@ -651,12 +642,34 @@
                             <!-- Delete Messenger Button -->
                             <button
                                 id="delete-messenger-button"
-                                class="w-full bg-gray-400 text-white p-3 rounded-lg font-semibold shadow-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200"
+                                class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
                             >
                                 Eliminar Mensajero
                             </button>
                         </div>
                     ` : ''}
+                </div>
+
+                <!-- Llevo Footer with Export/Import -->
+                <div class="llevo-footer w-full text-center">
+                    <div class="bg-llevo-secondary-dark p-4 rounded-xl mb-3">
+                        <h3 class="text-base sm:text-lg font-semibold text-white mb-3">Herramientas de Datos</h3>
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                            <button
+                                id="export-button"
+                                class="btn-llevo-primary flex-1"
+                            >
+                                📤 Exportar Datos
+                            </button>
+                            <button
+                                id="import-button"
+                                class="btn-llevo-secondary flex-1"
+                            >
+                                📥 Importar Datos
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-white opacity-90">© 2024 Llevo - Gestión de Mensajeros</p>
                 </div>
             `;
 
