@@ -618,3 +618,33 @@ svg {
 .bg-gradient-llevo-reverse {
     background: #2a9d8f;
 }
+
+/* Estilos para inputs de valores monetarios formateados */
+.currency-input {
+    font-family: 'Inter', monospace;
+    text-align: right;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.currency-input:focus {
+    border-color: #2a9d8f;
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+}
+
+/* Placeholder para inputs de moneda */
+.currency-input::placeholder {
+    color: #9ca3af;
+    font-style: italic;
+}
+
+/* Estilos para inputs con separadores de miles */
+.currency-input.formatted {
+    background-color: #f9fafb;
+    border-color: #d1d5db;
+}
+
+.currency-input.formatted:focus {
+    background-color: #ffffff;
+    border-color: #2a9d8f;
+}

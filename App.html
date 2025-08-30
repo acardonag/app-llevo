@@ -13,16 +13,20 @@
         // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         // Import Firebase configuration
-        import { firebaseConfig } from './firebase-config.js';
+        import { firebaseConfig, ADMIN_USERS } from './firebase-config.js';
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
 
         // Make Firebase available globally
         window.db = db;
+        window.auth = auth;
         window.FirebaseSDK = {
             collection,
             addDoc,
@@ -34,6 +38,13 @@
             where,
             orderBy
         };
+        // Make Auth functions available globally
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+        window.googleProvider = googleProvider;
+        // Make ADMIN_USERS available globally
+        window.ADMIN_USERS = ADMIN_USERS;
     </script>
 </head>
 <body class="min-h-screen p-2 sm:p-4 flex flex-col items-center bg-llevo-primary">
@@ -81,7 +92,7 @@
         let topupsHistory = [];
         let errorMessage = '';
         let isInitialized = false;
-        let currentUserId = 'usuario-local';
+        let currentUser = null;
         let isProcessing = false; // Prevent duplicate transactions
 
         // Local Storage Keys
@@ -161,6 +172,74 @@
             });
         }
 
+        // Función para formatear valores en pesos colombianos
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        // Función para formatear números mientras se escriben (con separadores de miles)
+        function formatNumberInput(input) {
+            // Guardar la posición del cursor
+            const cursorPosition = input.selectionStart;
+            
+            // Obtener solo los números del input
+            let value = input.value.replace(/[^\d]/g, '');
+            
+            // Si no hay valor, limpiar el input
+            if (value === '') {
+                input.value = '';
+                input.classList.remove('formatted');
+                return;
+            }
+            
+            // Convertir a número y formatear con separadores de miles
+            const number = parseInt(value, 10);
+            const formatted = new Intl.NumberFormat('es-CO').format(number);
+            
+            // Actualizar el valor del input
+            input.value = formatted;
+            input.classList.add('formatted');
+            
+            // Calcular nueva posición del cursor considerando los separadores agregados
+            // Intentar mantener el cursor en una posición lógica
+            let newCursorPosition = cursorPosition;
+            
+            // Si el cursor está al final, mantenerlo al final
+            if (cursorPosition >= input.value.length - 1) {
+                newCursorPosition = formatted.length;
+            } else {
+                // Calcular la nueva posición considerando los separadores
+                const beforeCursor = input.value.substring(0, cursorPosition);
+                const digitsBeforeCursor = beforeCursor.replace(/[^\d]/g, '').length;
+                
+                // Encontrar la posición en el texto formateado que corresponde a esos dígitos
+                let currentDigits = 0;
+                for (let i = 0; i < formatted.length; i++) {
+                    if (/\d/.test(formatted[i])) {
+                        currentDigits++;
+                        if (currentDigits === digitsBeforeCursor) {
+                            newCursorPosition = i + 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Asegurar que la posición del cursor sea válida
+            newCursorPosition = Math.min(Math.max(0, newCursorPosition), formatted.length);
+            input.setSelectionRange(newCursorPosition, newCursorPosition);
+        }
+
+        // Función para obtener el valor numérico de un input formateado
+        function getNumericValue(formattedValue) {
+            return parseInt(formattedValue.replace(/[^\d]/g, ''), 10);
+        }
+
         function generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
         }
@@ -183,8 +262,14 @@
             const topupAmountInput = document.getElementById('topup-amount');
             
             if (serviceDescriptionInput) serviceDescriptionInput.value = '';
-            if (serviceAmountInput) serviceAmountInput.value = '';
-            if (topupAmountInput) topupAmountInput.value = '';
+            if (serviceAmountInput) {
+                serviceAmountInput.value = '';
+                serviceAmountInput.classList.remove('formatted');
+            }
+            if (topupAmountInput) {
+                topupAmountInput.value = '';
+                topupAmountInput.classList.remove('formatted');
+            }
         }
 
         // Safety function to reset processing state
@@ -203,16 +288,65 @@
             }, 10000); // 10 seconds timeout
         }
 
+        // --- Authentication Functions ---
+        async function signInWithGoogle() {
+            try {
+                const result = await signInWithPopup(auth, googleProvider);
+                const user = result.user;
+                
+                // Verificar si el usuario es administrador
+                if (!ADMIN_USERS.includes(user.email)) {
+                    showModal('message', `Acceso denegado. El usuario ${user.email} no está autorizado como administrador.`);
+                    await signOut(auth);
+                    return false;
+                }
+                
+                currentUser = user;
+                showModal('message', `Bienvenido ${user.displayName || user.email}! Acceso autorizado como administrador.`);
+                return true;
+            } catch (error) {
+                console.error('Error signing in with Google:', error);
+                showModal('message', 'Error al iniciar sesión con Google.');
+                return false;
+            }
+        }
+
+        async function signOutUser() {
+            try {
+                await signOut(auth);
+                currentUser = null;
+                messengers = [];
+                selectedMessengerId = '';
+                selectedMessenger = null;
+                servicesHistory = [];
+                topupsHistory = [];
+                showModal('message', 'Sesión cerrada exitosamente.');
+                renderApp();
+            } catch (error) {
+                console.error('Error signing out:', error);
+                showModal('message', 'Error al cerrar sesión.');
+            }
+        }
+
         // --- Firebase Functions ---
         async function saveToFirebase(collectionName, data, documentId = null) {
             try {
+                // Agregar información de quién hizo la modificación
+                const modificationData = {
+                    ...data,
+                    lastModifiedBy: currentUser.uid,
+                    lastModifiedByEmail: currentUser.email,
+                    lastModifiedByName: currentUser.displayName || currentUser.email,
+                    lastModifiedAt: new Date().toISOString()
+                };
+
                 if (documentId) {
                     // Update existing document
                     const docRef = FirebaseSDK.doc(db, collectionName, documentId);
-                    await FirebaseSDK.updateDoc(docRef, data);
+                    await FirebaseSDK.updateDoc(docRef, modificationData);
                 } else {
                     // Add new document
-                    await FirebaseSDK.addDoc(FirebaseSDK.collection(db, collectionName), data);
+                    await FirebaseSDK.addDoc(FirebaseSDK.collection(db, collectionName), modificationData);
                 }
             } catch (error) {
                 console.error('Error saving to Firebase:', error);
@@ -248,7 +382,28 @@
 
         async function deleteFromFirebase(collectionName, documentId) {
             try {
-                await FirebaseSDK.deleteDoc(FirebaseSDK.doc(db, collectionName, documentId));
+                // Antes de eliminar, guardar información de quién hizo la eliminación
+                // Primero obtenemos el documento para guardar la información de eliminación
+                const docRef = FirebaseSDK.doc(db, collectionName, documentId);
+                const docSnap = await FirebaseSDK.getDocs(FirebaseSDK.query(
+                    FirebaseSDK.collection(db, `${collectionName}_deleted`),
+                    FirebaseSDK.where('originalId', '==', documentId)
+                ));
+                
+                // Si no existe un registro de eliminación, lo creamos
+                if (docSnap.empty) {
+                    await FirebaseSDK.addDoc(FirebaseSDK.collection(db, `${collectionName}_deleted`), {
+                        originalId: documentId,
+                        deletedBy: currentUser.uid,
+                        deletedByEmail: currentUser.email,
+                        deletedByName: currentUser.displayName || currentUser.email,
+                        deletedAt: new Date().toISOString(),
+                        collectionName: collectionName
+                    });
+                }
+                
+                // Ahora eliminamos el documento original
+                await FirebaseSDK.deleteDoc(docRef);
             } catch (error) {
                 console.error('Error deleting from Firebase:', error);
                 showModal('message', 'Error al eliminar datos de Firebase.');
@@ -259,7 +414,8 @@
         // --- Data Management Functions ---
         async function loadMessengers() {
             try {
-                messengers = await loadFromFirebase('messengers', currentUserId);
+                // Cargar todos los mensajeros sin filtrar por usuario para que todos los administradores vean la misma información
+                messengers = await loadFromFirebase('messengers');
                 renderApp();
             } catch (error) {
                 console.error('Error loading messengers:', error);
@@ -277,7 +433,10 @@
                     // This is a new messenger, add to Firebase
                     const docRef = await FirebaseSDK.addDoc(FirebaseSDK.collection(db, 'messengers'), {
                         ...messenger,
-                        userId: currentUserId,
+                        // No asignar userId específico para que sea compartido entre administradores
+                        createdBy: currentUser.uid,
+                        createdByEmail: currentUser.email,
+                        createdByName: currentUser.displayName || currentUser.email,
                         createdAt: new Date().toISOString()
                     });
                     messenger.id = docRef.id;
@@ -316,7 +475,10 @@
             try {
                 await saveToFirebase('services', {
                     ...service,
-                    userId: currentUserId,
+                    // Registrar quién creó el servicio pero no filtrar por usuario
+                    createdBy: currentUser.uid,
+                    createdByEmail: currentUser.email,
+                    createdByName: currentUser.displayName || currentUser.email,
                     messengerId: selectedMessengerId,
                     date: new Date().toISOString()
                 });
@@ -354,7 +516,10 @@
             try {
                 await saveToFirebase('topups', {
                     ...topup,
-                    userId: currentUserId,
+                    // Registrar quién creó el recarga pero no filtrar por usuario
+                    createdBy: currentUser.uid,
+                    createdByEmail: currentUser.email,
+                    createdByName: currentUser.displayName || currentUser.email,
                     messengerId: selectedMessengerId,
                     date: new Date().toISOString()
                 });
@@ -367,9 +532,9 @@
         // --- Export/Import Functions ---
         async function exportData() {
             try {
-                // Load all data from Firebase
-                const allServices = await loadFromFirebase('services', currentUserId);
-                const allTopups = await loadFromFirebase('topups', currentUserId);
+                // Load all data from Firebase (sin filtrar por usuario para que sea compartido)
+                const allServices = await loadFromFirebase('services');
+                const allTopups = await loadFromFirebase('topups');
                 
                 const exportData = {
                     messengers: messengers,
@@ -411,19 +576,19 @@
                             if (importData.messengers && importData.services && importData.topups) {
                                 // Import messengers
                                 for (const messenger of importData.messengers) {
-                                    messenger.userId = currentUserId;
+                                    // Sin asignar userId específico para que sea compartido
                                     await saveMessenger(messenger);
                                 }
                                 
                                 // Import services
                                 for (const service of importData.services) {
-                                    service.userId = currentUserId;
+                                    // Sin asignar userId específico para que sea compartido
                                     await saveService(service);
                                 }
                                 
                                 // Import topups
                                 for (const topup of importData.topups) {
-                                    topup.userId = currentUserId;
+                                    // Sin asignar userId específico para que sea compartido
                                     await saveTopup(topup);
                                 }
                                 
@@ -480,37 +645,82 @@
                     <p class="text-xs sm:text-sm text-gray-700">Gestión de Mensajeros</p>
                 </div>
 
-                <!-- User ID display -->
-                <div class="w-full text-center mb-4 p-2 bg-llevo-secondary-light rounded-lg shadow-sm border border-llevo-secondary">
-                    <p class="text-xs sm:text-sm text-llevo-secondary">Aplicación conectada a Firebase</p>
-                    <p class="text-xs font-mono text-llevo-secondary">Usuario: ${currentUserId}</p>
-                </div>
+                <!-- Authentication Status -->
+                ${currentUser ? `
+                    <div class="w-full text-center mb-4 p-3 bg-green-100 rounded-lg shadow-sm border border-green-300">
+                        <div class="flex items-center justify-center space-x-2 mb-2">
+                            <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                <span class="text-white text-sm font-bold">${currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : currentUser.email.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <div class="text-left">
+                                <p class="text-sm font-semibold text-green-800">${currentUser.displayName || 'Usuario'}</p>
+                                <p class="text-xs text-green-600">${currentUser.email}</p>
+                            </div>
+                        </div>
+                        <button
+                            id="signout-button"
+                            class="btn-llevo-secondary px-4 py-2 text-sm rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                        >
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                ` : `
+                    <div class="w-full text-center mb-4 p-3 bg-yellow-100 rounded-lg shadow-sm border border-yellow-300">
+                        <p class="text-sm text-yellow-800 mb-2">🔐 Inicia sesión para acceder a la aplicación</p>
+                        <button
+                            id="signin-button"
+                            class="btn-llevo-primary px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
+                        >
+                            <svg class="w-5 h-5 inline mr-2" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                            </svg>
+                            Iniciar Sesión con Google
+                        </button>
+                    </div>
+                `}
 
-                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
-                    <h1 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Gestionar Mensajeros</h1>
+                ${currentUser ? `
+                    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
+                        <h1 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Gestionar Mensajeros</h1>
 
-                    <!-- Select Messenger -->
-                    <div class="mb-4">
-                        <label for="messenger-select" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
-                            Selecciona un Mensajero:
-                        </label>
-                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                            <select
-                                id="messenger-select"
-                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
-                            >
-                                <option value="">-- Seleccionar --</option>
-                                ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}
-                            </select>
-                            <button
-                                id="add-messenger-button"
-                                class="btn-llevo-secondary p-3 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
-                                title="Agregar nuevo mensajero"
-                            >
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                            </button>
+                        <!-- Select Messenger -->
+                        <div class="mb-4">
+                            <label for="messenger-select" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
+                                Selecciona un Mensajero:
+                            </label>
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                                <select
+                                    id="messenger-select"
+                                    class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
+                                >
+                                    <option value="">-- Seleccionar --</option>
+                                    ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}${m.createdByName ? ` (Creado por: ${m.createdByName})` : ''}</option>`).join('')}
+                                </select>
+                                <button
+                                    id="add-messenger-button"
+                                    class="btn-llevo-secondary p-3 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
+                                    title="Agregar nuevo mensajero"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                ` : `
+                    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
+                        <div class="text-center py-8">
+                            <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                </svg>
+                            </div>
+                            <h2 class="text-xl font-semibold text-gray-700 mb-2">Acceso Restringido</h2>
+                            <p class="text-gray-600">Debes iniciar sesión con una cuenta de administrador para acceder a la gestión de mensajeros.</p>
                         </div>
                     </div>
+                `}
 
                     ${selectedMessenger ? `
                         <div class="mt-6 sm:mt-8">
@@ -519,8 +729,20 @@
                             </h2>
                             <div class="bg-llevo-secondary-light p-3 sm:p-4 rounded-xl shadow-inner mb-4 sm:mb-6 border border-llevo-secondary">
                                 <p class="text-lg sm:text-xl font-bold text-center text-llevo-secondary">
-                                    Saldo Actual: <span class="text-green-600">$${recalculateMessengerBalance(selectedMessengerId).toFixed(2)}</span>
+                                    Saldo Actual: <span class="text-green-600">${formatCurrency(recalculateMessengerBalance(selectedMessengerId))}</span>
                                 </p>
+                                ${selectedMessenger.createdByName ? `
+                                    <p class="text-sm text-center text-gray-600 mt-2">
+                                        Creado por: ${selectedMessenger.createdByName}
+                                        ${selectedMessenger.createdAt ? ` el ${getFormattedDate(selectedMessenger.createdAt)}` : ''}
+                                    </p>
+                                ` : ''}
+                                ${selectedMessenger.lastModifiedByName ? `
+                                    <p class="text-sm text-center text-gray-600">
+                                        Última modificación por: ${selectedMessenger.lastModifiedByName}
+                                        ${selectedMessenger.lastModifiedAt ? ` el ${getFormattedDate(selectedMessenger.lastModifiedAt)}` : ''}
+                                    </p>
+                                ` : ''}
                             </div>
 
                             <!-- Register Service Form -->
@@ -543,11 +765,10 @@
                                         Monto del Servicio ($):
                                     </label>
                                                                             <input
-                                            type="number"
+                                            type="text"
                                             id="service-amount"
-                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
-                                            placeholder="Ej: 15.00"
-                                            step="0.01"
+                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary currency-input"
+                                            placeholder="Ej: 15.000"
                                             required
                                         />
                                 </div>
@@ -578,11 +799,10 @@
                                         Monto de la Recarga ($):
                                     </label>
                                                                             <input
-                                            type="number"
+                                            type="text"
                                             id="topup-amount"
-                                            class="w-full p-2 border border-llevo-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-primary"
-                                            placeholder="Ej: 50.00"
-                                            step="0.01"
+                                            class="w-full p-2 border border-llevo-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-primary currency-input"
+                                            placeholder="Ej: 50.000"
                                             required
                                         />
                                 </div>
@@ -618,7 +838,8 @@
                                         <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
                                             ${servicesHistory.map(service => `
                                                 <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary">-${service.amount.toFixed(2)}</span>
+                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary">-${formatCurrency(service.amount)}</span>
+                                ${service.lastModifiedByName ? `<br><small class="text-gray-500">Modificado por: ${service.lastModifiedByName}</small>` : ''}
                                                 </li>
                                             `).join('')}
                                         </ul>
@@ -631,7 +852,8 @@
                                         <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
                                             ${topupsHistory.map(topup => `
                                                 <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary">+${topup.amount.toFixed(2)}</span>
+                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary">+${formatCurrency(topup.amount)}</span>
+                                ${topup.lastModifiedByName ? `<br><small class="text-gray-500">Modificado por: ${topup.lastModifiedByName}</small>` : ''}
                                                 </li>
                                             `).join('')}
                                         </ul>
@@ -678,6 +900,23 @@
         }
 
         function attachEventListeners() {
+            // Authentication event listeners
+            const signinButton = document.getElementById('signin-button');
+            if (signinButton) {
+                signinButton.addEventListener('click', async () => {
+                    const success = await signInWithGoogle();
+                    if (success) {
+                        await loadMessengers();
+                        renderApp();
+                    }
+                });
+            }
+
+            const signoutButton = document.getElementById('signout-button');
+            if (signoutButton) {
+                signoutButton.addEventListener('click', signOutUser);
+            }
+
             const messengerSelect = document.getElementById('messenger-select');
             if (messengerSelect) {
                 messengerSelect.addEventListener('change', async (e) => {
@@ -732,6 +971,19 @@
             const importButton = document.getElementById('import-button');
             if (importButton) {
                 importButton.addEventListener('click', importData);
+            }
+
+            // Event listeners para formatear inputs de valores monetarios en tiempo real
+            const serviceAmountInput = document.getElementById('service-amount');
+            if (serviceAmountInput) {
+                serviceAmountInput.addEventListener('input', () => formatNumberInput(serviceAmountInput));
+                serviceAmountInput.addEventListener('blur', () => formatNumberInput(serviceAmountInput));
+            }
+
+            const topupAmountInput = document.getElementById('topup-amount');
+            if (topupAmountInput) {
+                topupAmountInput.addEventListener('input', () => formatNumberInput(topupAmountInput));
+                topupAmountInput.addEventListener('blur', () => formatNumberInput(topupAmountInput));
             }
         }
 
@@ -826,7 +1078,7 @@
                 return;
             }
 
-            const amount = parseFloat(serviceAmountInput.value);
+            const amount = getNumericValue(serviceAmountInput.value);
             if (isNaN(amount) || amount <= 0) {
                 showModal('message', 'El monto del servicio debe ser un número positivo.');
                 resetProcessingState();
@@ -847,7 +1099,7 @@
                 // Calculate new balance after reloading data
                 const newBalance = recalculateMessengerBalance(selectedMessengerId);
 
-                showModal('message', `Servicio registrado para ${selectedMessenger.name} en Firebase. Saldo actual: ${newBalance.toFixed(2)}.`);
+                showModal('message', `Servicio registrado para ${selectedMessenger.name} en Firebase. Saldo actual: ${formatCurrency(newBalance)}.`);
                 clearForms();
                 
                 // Reset processing state before rendering
@@ -880,7 +1132,7 @@
                 return;
             }
 
-            const amount = parseFloat(topupAmountInput.value);
+            const amount = getNumericValue(topupAmountInput.value);
             if (isNaN(amount) || amount <= 0) {
                 showModal('message', 'El monto de la recarga debe ser un número positivo.');
                 resetProcessingState();
@@ -900,7 +1152,7 @@
                 // Calculate new balance after reloading data
                 const newBalance = recalculateMessengerBalance(selectedMessengerId);
 
-                showModal('message', `Recarga de ${amount.toFixed(2)} agregada para ${selectedMessenger.name} en Firebase. Saldo actual: ${newBalance.toFixed(2)}.`);
+                showModal('message', `Recarga de ${formatCurrency(amount)} agregada para ${selectedMessenger.name} en Firebase. Saldo actual: ${formatCurrency(newBalance)}.`);
                 clearForms();
                 
                 // Reset processing state before rendering
@@ -927,11 +1179,26 @@
                     throw new Error('Firebase no se inicializó correctamente');
                 }
                 
-                // Load data from Firebase
-                await loadMessengers();
+                // Set up authentication state listener
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        // Check if user is admin
+                        if (ADMIN_USERS.includes(user.email)) {
+                            currentUser = user;
+                            await loadMessengers();
+                        } else {
+                            showModal('message', `Acceso denegado. El usuario ${user.email} no está autorizado como administrador.`);
+                            await signOut(auth);
+                            currentUser = null;
+                        }
+                    } else {
+                        currentUser = null;
+                    }
+                    
+                    isInitialized = true;
+                    renderApp();
+                });
                 
-                isInitialized = true;
-                renderApp();
             } catch (error) {
                 console.error("Error initializing application:", error);
                 errorMessage = "Error al inicializar la aplicación con Firebase. Por favor, verifica tu configuración.";

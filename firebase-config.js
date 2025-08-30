@@ -13,16 +13,25 @@ const firebaseConfig = {
 // INSTRUCCIONES PARA CONFIGURAR FIREBASE:
 // 1. Crea un proyecto en Firebase Console
 // 2. Habilita Firestore Database
-// 3. En las reglas de Firestore, usa temporalmente:
+// 3. Habilita Authentication y configura Google como proveedor
+// 4. En las reglas de Firestore, usa:
 //    rules_version = '2';
 //    service cloud.firestore {
 //      match /databases/{database}/documents {
 //        match /{document=**} {
-//          allow read, write: if true;
+//          allow read, write: if request.auth != null;
 //        }
 //      }
 //    }
-// 4. Copia la configuración de tu app web
-// 5. Reemplaza los valores en firebaseConfig arriba
+// 5. Copia la configuración de tu app web
+// 6. Reemplaza los valores en firebaseConfig arriba
 
-export { firebaseConfig };
+// Lista de usuarios administradores autorizados (emails de Google)
+const ADMIN_USERS = [
+    // Agrega aquí los emails de los usuarios administradores
+    // Ejemplo: "admin@tudominio.com"
+    "acg1606@gmail.com",
+    "ideamossoft@gmail.com"
+];
+
+export { firebaseConfig, ADMIN_USERS };
