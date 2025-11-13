@@ -31,48 +31,49 @@
         };
     </script>
 </head>
-<body class="min-h-screen p-2 sm:p-4 flex flex-col items-center bg-llevo-primary">
-    <div id="app-root" class="w-full max-w-md mx-auto px-4 sm:px-6">
-        <!-- Llevo Header with Logo -->
-        <div class="llevo-header w-full text-center">
-            <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo mx-auto mb-2">
-            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Llevo</h1>
-            <p class="text-xs sm:text-sm text-gray-700">Consulta de Mensajeros</p>
-        </div>
-
-        <!-- Consulta por Celular -->
-        <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
-            <h2 class="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Consulta tu Saldo</h2>
-            
-            <div class="mb-4">
-                <label for="phone-input" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
-                    📱 Ingresa tu número de celular:
-                </label>
-                <input
-                    type="tel"
-                    id="phone-input"
-                    class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
-                    placeholder="Ej: 3001234567"
-                    maxlength="13"
-                />
+<body class="min-h-screen bg-gray-100">
+    <div id="app-root" class="w-full">
+        <div class="dashboard-container">
+            <!-- Dashboard Header -->
+            <div class="dashboard-header">
+                <div class="flex items-center">
+                    <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo" style="max-height: 40px; margin-right: 1rem;">
+                    <h1 class="text-xl font-bold text-gray-800">Consulta de Saldo</h1>
+                </div>
             </div>
-            
-            <button
-                id="query-button"
-                class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-            >
-                🔍 Consultar Saldo
-            </button>
-        </div>
 
-        <!-- Resultado de la Consulta -->
-        <div id="query-result" class="hidden">
-            <!-- El contenido se generará dinámicamente -->
-        </div>
+            <!-- Dashboard Content -->
+            <div class="dashboard-content">
+                <!-- Consulta por Celular Card -->
+                <div class="stat-card mb-6">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Consulta tu Saldo</h2>
+                    
+                    <div class="mb-4">
+                        <label for="phone-input" class="block text-base font-semibold text-gray-700 mb-2">
+                            📱 Ingresa tu número de celular:
+                        </label>
+                        <input
+                            type="tel"
+                            id="phone-input"
+                            class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
+                            placeholder="Ej: 300 123 4567"
+                            maxlength="13"
+                        />
+                    </div>
+                    
+                    <button
+                        id="query-button"
+                        class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                    >
+                        🔍 Consultar Saldo
+                    </button>
+                </div>
 
-        <!-- Footer -->
-        <div class="llevo-footer w-full text-center">
-            <p class="text-xs text-white opacity-90">© 2024 Llevo - Consulta de Mensajeros</p>
+                <!-- Resultado de la Consulta -->
+                <div id="query-result" class="hidden">
+                    <!-- El contenido se generará dinámicamente -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -196,84 +197,74 @@
 
             const balance = calculateBalance();
             
-            // Determinar el color del saldo y si mostrar alertas
-            let balanceColor = 'text-green-600';
-            let balanceBackground = 'bg-llevo-primary-light';
-            let balanceBorder = 'border-llevo-primary';
-            
-            if (balance < 0) {
-                balanceColor = 'text-red-600';
-                balanceBackground = 'bg-red-50';
-                balanceBorder = 'border-red-300';
-            } else if (balance < 5000) {
-                balanceColor = 'text-orange-600';
-                balanceBackground = 'bg-orange-50';
-                balanceBorder = 'border-orange-300';
-            }
-            
             queryResult.innerHTML = `
-                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
-                    <h3 class="text-lg sm:text-xl font-bold mb-4 text-center text-llevo-primary">
-                        📱 ${currentMessenger.name}
-                    </h3>
-                    
-                    <!-- Saldo Actual -->
-                    <div class="${balanceBackground} p-4 rounded-xl shadow-inner mb-6 border ${balanceBorder}">
-                        <div class="flex items-center justify-center space-x-3">
-                            <p class="text-lg sm:text-xl font-bold text-llevo-primary">
-                                Saldo Actual: <span class="${balanceColor}">${formatCurrency(balance)}</span>
-                            </p>
-                            ${balance < 0 ? `
-                                <span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">
-                                    CRÍTICO
-                                </span>
-                            ` : balance < 5000 ? `
-                                <span class="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                    BAJO
-                                </span>
-                            ` : `
-                                <span class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                    NORMAL
-                                </span>
-                            `}
+                <div class="stat-card mb-6">
+                    <!-- Messenger Info Card -->
+                    <div class="messenger-card mb-6" style="cursor: default;">
+                        <div class="messenger-card-header">
+                            <div class="messenger-avatar">
+                                ${currentMessenger.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="messenger-info">
+                                <h3 class="messenger-name">${currentMessenger.name}</h3>
+                                ${currentMessenger.phoneNumber ? `<p class="messenger-phone">📱 ${currentMessenger.phoneNumber}</p>` : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Saldo Actual -->
+                        <div class="messenger-balance">
+                            <div class="balance-label">Saldo Actual</div>
+                            <div class="balance-amount ${balance < 0 ? 'negative' : balance < 5000 ? 'low' : 'positive'}">${formatCurrency(balance)}</div>
+                        </div>
+                        
+                        <!-- Status Badge -->
+                        <div class="messenger-stats">
+                            <div class="stat-item">
+                                <span class="stat-value">${servicesHistory.length}</span>
+                                <span class="stat-label">Servicios</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value">${topupsHistory.length}</span>
+                                <span class="stat-label">Recargas</span>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- Alertas de Saldo -->
                     ${balance < 0 ? `
-                        <div class="bg-red-100 border border-red-300 rounded-xl p-4 mb-4 balance-alert">
+                        <div class="stat-card mb-4" style="background: #fef2f2; border-color: #fecaca;">
                             <div class="flex items-center space-x-3">
                                 <div class="flex-shrink-0">
                                     <span class="text-2xl">🚨</span>
                                 </div>
                                 <div class="flex-1">
-                                    <h4 class="text-red-800 font-semibold text-lg">¡Atención Crítica!</h4>
+                                    <h4 class="text-red-800 font-semibold text-lg mb-2">¡Atención Crítica!</h4>
                                     <p class="text-red-700 text-base mb-2">Es necesario que hagas una recarga para poder seguir recibiendo servicios.</p>
                                     <p class="text-red-600 text-sm">💡 <strong>Recomendación:</strong> Recarga mínimo $10.000 para salir del saldo negativo.</p>
                                 </div>
                             </div>
                         </div>
                     ` : balance < 5000 ? `
-                        <div class="bg-orange-100 border border-orange-300 rounded-xl p-4 mb-4 balance-alert">
+                        <div class="stat-card mb-4" style="background: #fffbeb; border-color: #fde68a;">
                             <div class="flex items-center space-x-3">
                                 <div class="flex-shrink-0">
                                     <span class="text-2xl">⚠️</span>
                                 </div>
                                 <div class="flex-1">
-                                    <h4 class="text-orange-800 font-semibold text-lg">Saldo Bajo</h4>
+                                    <h4 class="text-orange-800 font-semibold text-lg mb-2">Saldo Bajo</h4>
                                     <p class="text-orange-700 text-base mb-2">Sr. mensajero, su saldo está a punto de agotarse. Lo invitamos a recargar.</p>
                                     <p class="text-orange-600 text-sm">💡 <strong>Recomendación:</strong> Recarga mínimo $5.000 para mantener un saldo saludable.</p>
                                 </div>
                             </div>
                         </div>
                     ` : `
-                        <div class="bg-green-100 border border-green-300 rounded-xl p-4 mb-4 balance-alert">
+                        <div class="stat-card mb-4" style="background: #f0fdf4; border-color: #bbf7d0;">
                             <div class="flex items-center space-x-3">
                                 <div class="flex-shrink-0">
                                     <span class="text-2xl">✅</span>
                                 </div>
                                 <div class="flex-1">
-                                    <h4 class="text-green-800 font-semibold text-lg">Saldo Saludable</h4>
+                                    <h4 class="text-green-800 font-semibold text-lg mb-2">Saldo Saludable</h4>
                                     <p class="text-green-700 text-base">¡Excelente! Tu saldo está en un nivel óptimo para recibir servicios.</p>
                                 </div>
                             </div>
@@ -281,37 +272,50 @@
                     `}
 
                     <!-- Historial de Movimientos -->
-                    <div class="mb-4">
-                        <h4 class="text-base font-semibold mb-3 text-gray-700">📊 Historial de Movimientos</h4>
+                    <div class="stat-card">
+                        <h4 class="text-lg font-semibold mb-4 text-gray-800">📊 Historial de Movimientos</h4>
                         
                         ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
                             <p class="text-gray-500 text-center py-4">No hay movimientos registrados.</p>
                         ` : `
                             <!-- Servicios -->
                             ${servicesHistory.length > 0 ? `
-                                <div class="mb-4">
-                                    <h5 class="text-sm font-semibold mb-2 text-llevo-secondary">💼 Servicios</h5>
-                                    <ul class="space-y-1">
+                                <div class="mb-6">
+                                    <h5 class="text-base font-semibold mb-3 text-llevo-secondary">💼 Servicios Prestados</h5>
+                                    <div class="space-y-2">
                                         ${servicesHistory.map(service => `
-                                            <li class="text-sm text-gray-700 p-2 bg-gray-50 rounded">
-                                                <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary font-semibold">-${formatCurrency(service.amount)}</span>
-                                            </li>
+                                            <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                <div class="flex justify-between items-start">
+                                                    <div class="flex-1">
+                                                        <p class="text-sm font-semibold text-gray-800">${service.description}</p>
+                                                        <p class="text-xs text-gray-500 mt-1">${getFormattedDate(service.date)}</p>
+                                                        ${service.totalAmount ? `<p class="text-xs text-gray-500">Valor total: ${formatCurrency(service.totalAmount)}</p>` : ''}
+                                                    </div>
+                                                    <span class="text-llevo-secondary font-bold">-${formatCurrency(service.amount)}</span>
+                                                </div>
+                                            </div>
                                         `).join('')}
-                                    </ul>
+                                    </div>
                                 </div>
                             ` : ''}
                             
                             <!-- Recargas -->
                             ${topupsHistory.length > 0 ? `
-                                <div class="mb-4">
-                                    <h5 class="text-sm font-semibold mb-2 text-llevo-primary">💳 Recargas</h5>
-                                    <ul class="space-y-1">
+                                <div>
+                                    <h5 class="text-base font-semibold mb-3 text-llevo-primary">💳 Recargas Realizadas</h5>
+                                    <div class="space-y-2">
                                         ${topupsHistory.map(topup => `
-                                            <li class="text-sm text-gray-700 p-2 bg-gray-50 rounded">
-                                                <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary font-semibold">+${formatCurrency(topup.amount)}</span>
-                                            </li>
+                                            <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                                <div class="flex justify-between items-start">
+                                                    <div class="flex-1">
+                                                        <p class="text-sm font-semibold text-gray-800">Recarga de saldo</p>
+                                                        <p class="text-xs text-gray-500 mt-1">${getFormattedDate(topup.date)}</p>
+                                                    </div>
+                                                    <span class="text-llevo-primary font-bold">+${formatCurrency(topup.amount)}</span>
+                                                </div>
+                                            </div>
                                         `).join('')}
-                                    </ul>
+                                    </div>
                                 </div>
                             ` : ''}
                         `}
@@ -320,7 +324,7 @@
                     <!-- Botón para nueva consulta -->
                     <button
                         id="new-query-button"
-                        class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                        class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 mt-4"
                     >
                         🔍 Nueva Consulta
                     </button>
