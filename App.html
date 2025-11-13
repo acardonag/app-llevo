@@ -47,17 +47,17 @@
         window.ADMIN_USERS = ADMIN_USERS;
     </script>
 </head>
-<body class="min-h-screen p-2 sm:p-4 flex flex-col items-center bg-llevo-primary">
+<body class="min-h-screen bg-gray-100">
 
-    <div id="app-root" class="w-full max-w-md mx-auto px-4 sm:px-6">
+    <div id="app-root" class="w-full">
         <!-- Content will be rendered here by JavaScript -->
-        <div class="flex items-center justify-center min-h-screen bg-llevo-primary p-4">
+        <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
             <p class="text-xl text-gray-800">Cargando aplicación...</p>
         </div>
     </div>
 
     <!-- Custom Modal Structure -->
-    <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
+    <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden" style="z-index: 9999;">
         <div class="bg-white p-4 sm:p-6 rounded-xl shadow-2xl w-full max-w-sm mx-4 text-center">
             <p id="modal-message" class="text-base sm:text-lg font-semibold text-gray-800 mb-4"></p>
             <div id="modal-input-container" class="mb-4 hidden">
@@ -94,6 +94,9 @@
         let isInitialized = false;
         let currentUser = null;
         let isProcessing = false; // Prevent duplicate transactions
+        let messengerBalances = {}; // Store balances for all messengers
+        let allServices = []; // Store all services
+        let allTopups = []; // Store all topups
 
         // Local Storage Keys
         const STORAGE_KEYS = {
@@ -139,6 +142,9 @@
             } else { // 'message'
                 modalCloseButton.textContent = 'Cerrar';
             }
+            // Ensure modal is on top with highest z-index
+            customModal.style.zIndex = '9999';
+            customModal.style.backgroundColor = 'rgba(0, 0, 0, 0.7)'; // Darker background for better visibility
             customModal.classList.remove('hidden');
         }
 
@@ -170,6 +176,24 @@
                 hour: '2-digit',
                 minute: '2-digit'
             });
+        }
+
+        // Function to get today's date in local timezone (YYYY-MM-DD format)
+        function getTodayLocalDate() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // Function to convert date string (YYYY-MM-DD) to ISO string preserving the date
+        function dateStringToISO(dateString) {
+            // dateString is in format YYYY-MM-DD
+            // We need to create a date at midnight in local time, then convert to ISO
+            const [year, month, day] = dateString.split('-').map(Number);
+            const date = new Date(year, month - 1, day, 12, 0, 0); // Use noon to avoid timezone issues
+            return date.toISOString();
         }
 
         // Función para formatear valores en pesos colombianos
@@ -287,6 +311,50 @@
             
             // Base balance starts at 0, so final balance = totalTopups - totalServices
             return totalTopups - totalServices;
+        }
+
+        // Function to calculate balance for a specific messenger from stored data
+        function calculateMessengerBalance(messengerId) {
+            if (!messengerId) return 0;
+            
+            const messengerServices = allServices.filter(s => s.messengerId === messengerId);
+            const messengerTopups = allTopups.filter(t => t.messengerId === messengerId);
+            
+            const totalServices = messengerServices.reduce((sum, service) => sum + (service.amount || 0), 0);
+            const totalTopups = messengerTopups.reduce((sum, topup) => sum + (topup.amount || 0), 0);
+            
+            return totalTopups - totalServices;
+        }
+
+        // Function to get balance class for styling
+        function getBalanceClass(balance) {
+            if (balance < 0) return 'negative';
+            if (balance < 5000) return 'low';
+            return 'positive';
+        }
+
+        // Function to get avatar initial
+        function getAvatarInitial(name) {
+            if (!name) return '?';
+            return name.charAt(0).toUpperCase();
+        }
+
+        // Function to load all services and topups for dashboard
+        async function loadAllTransactions() {
+            try {
+                allServices = await loadFromFirebase('services');
+                allTopups = await loadFromFirebase('topups');
+                
+                // Calculate balances for all messengers
+                messengerBalances = {};
+                messengers.forEach(messenger => {
+                    messengerBalances[messenger.id] = calculateMessengerBalance(messenger.id);
+                });
+            } catch (error) {
+                console.error('Error loading all transactions:', error);
+                allServices = [];
+                allTopups = [];
+            }
         }
 
         // Function to clear all forms
@@ -450,6 +518,8 @@
             try {
                 // Cargar todos los mensajeros sin filtrar por usuario para que todos los administradores vean la misma información
                 messengers = await loadFromFirebase('messengers');
+                // Load all transactions to calculate balances
+                await loadAllTransactions();
                 renderApp();
             } catch (error) {
                 console.error('Error loading messengers:', error);
@@ -515,6 +585,24 @@
                     createdByName: currentUser.displayName || currentUser.email,
                     messengerId: selectedMessengerId,
                     date: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error('Error saving service:', error);
+                throw error;
+            }
+        }
+
+        async function saveServiceWithDate(service, serviceDate) {
+            try {
+                await saveToFirebase('services', {
+                    ...service,
+                    // Registrar quién creó el servicio
+                    createdBy: currentUser.uid,
+                    createdByEmail: currentUser.email,
+                    createdByName: currentUser.displayName || currentUser.email,
+                    createdAt: new Date().toISOString(),
+                    messengerId: selectedMessengerId,
+                    date: dateStringToISO(serviceDate) // Use custom date, preserving the date value
                 });
             } catch (error) {
                 console.error('Error saving service:', error);
@@ -655,296 +743,187 @@
         function renderApp() {
             if (errorMessage) {
                 appRoot.innerHTML = `
-                                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary-light text-gray-800 p-4 rounded-xl shadow-md border border-llevo-primary-dark">
-                    <p class="text-xl">${errorMessage}</p>
-                </div>
+                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary-light text-gray-800 p-4 rounded-xl shadow-md border border-llevo-primary-dark">
+                        <p class="text-xl">${errorMessage}</p>
+                    </div>
                 `;
                 return;
             }
 
             if (!isInitialized) {
                 appRoot.innerHTML = `
-                                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary p-4">
-                    <p class="text-xl text-gray-800">Cargando aplicación...</p>
-                </div>
+                    <div class="flex items-center justify-center min-h-screen bg-llevo-primary p-4">
+                        <p class="text-xl text-gray-800">Cargando aplicación...</p>
+                    </div>
                 `;
                 return;
             }
 
-            appRoot.innerHTML = `
-                <!-- Llevo Header with Logo -->
-                <div class="llevo-header w-full text-center">
-                    <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo mx-auto mb-2">
-                    <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Llevo</h1>
-                    <p class="text-xs sm:text-sm text-gray-700">Gestión de Mensajeros</p>
-                </div>
-
-                <!-- Authentication Status -->
-                ${currentUser ? `
-                    <div class="w-full text-center mb-4 p-3 bg-green-100 rounded-lg shadow-sm border border-green-300">
-                        <div class="flex items-center justify-center space-x-2 mb-2">
-                            <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                                <span class="text-white text-sm font-bold">${currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : currentUser.email.charAt(0).toUpperCase()}</span>
-                            </div>
-                            <div class="text-left">
-                                <p class="text-sm font-semibold text-green-800">${currentUser.displayName || 'Usuario'}</p>
-                                <p class="text-xs text-green-600">${currentUser.email}</p>
+            // If user is not logged in, show login screen
+            if (!currentUser) {
+                appRoot.innerHTML = `
+                    <div class="dashboard-container">
+                        <div class="dashboard-header">
+                            <div class="flex items-center">
+                                <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo" style="max-height: 40px; margin-right: 1rem;">
+                                <h1 class="text-xl font-bold text-gray-800">Llevo Dashboard</h1>
                             </div>
                         </div>
-                        <button
-                            id="signout-button"
-                            class="btn-llevo-secondary px-4 py-2 text-sm rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-                        >
-                            Cerrar Sesión
-                        </button>
-                    </div>
-                ` : `
-                    <div class="w-full text-center mb-4 p-3 bg-yellow-100 rounded-lg shadow-sm border border-yellow-300">
-                        <p class="text-sm text-yellow-800 mb-2">🔐 Inicia sesión para acceder a la aplicación</p>
-                        <button
-                            id="signin-button"
-                            class="btn-llevo-primary px-6 py-2 rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
-                        >
-                            <svg class="w-5 h-5 inline mr-2" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                            </svg>
-                            Iniciar Sesión con Google
-                        </button>
-                    </div>
-                `}
-
-                ${currentUser ? `
-                    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
-                        <h1 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-center text-llevo-secondary">Gestionar Mensajeros</h1>
-
-                        <!-- Select Messenger -->
-                        <div class="mb-4">
-                            <label for="messenger-select" class="block text-base sm:text-lg font-semibold text-llevo-secondary mb-2">
-                                Selecciona un Mensajero:
-                            </label>
-                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                                <select
-                                    id="messenger-select"
-                                    class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-llevo-secondary transition duration-200 ease-in-out bg-white"
+                        <div class="dashboard-content">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🔐</div>
+                                <div class="empty-state-text">Inicia sesión para acceder al dashboard</div>
+                                <div class="empty-state-subtext">Solo administradores autorizados pueden acceder</div>
+                                <button
+                                    id="signin-button"
+                                    class="btn-llevo-primary px-6 py-3 rounded-lg font-semibold mt-4 focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
                                 >
-                                    <option value="">-- Seleccionar --</option>
-                                    ${messengers.map(m => `<option value="${m.id}" ${selectedMessengerId === m.id ? 'selected' : ''}>${m.name}${m.phoneNumber ? ` - ${m.phoneNumber}` : ''}${m.createdByName ? ` (Creado por: ${m.createdByName})` : ''}</option>`).join('')}
-                                </select>
+                                    <svg class="w-5 h-5 inline mr-2" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                    </svg>
+                                    Iniciar Sesión con Google
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                attachEventListeners();
+                return;
+            }
+
+            // Calculate dashboard stats
+            const totalMessengers = messengers.length;
+            const totalBalance = Object.values(messengerBalances).reduce((sum, balance) => sum + balance, 0);
+            const positiveBalances = Object.values(messengerBalances).filter(b => b > 0).length;
+            const negativeBalances = Object.values(messengerBalances).filter(b => b < 0).length;
+
+            appRoot.innerHTML = `
+                <div class="dashboard-container">
+                    <!-- Dashboard Header -->
+                    <div class="dashboard-header">
+                        <div class="flex items-center">
+                            <img src="https://llevo.com.co/img/meetup-logo.png" alt="Llevo Logo" class="llevo-logo" style="max-height: 40px; margin-right: 1rem;">
+                            <h1 class="text-xl font-bold text-gray-800">Llevo Dashboard</h1>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                                    <span class="text-white text-sm font-bold">${currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : currentUser.email.charAt(0).toUpperCase()}</span>
+                                </div>
+                                <div class="text-left">
+                                    <p class="text-sm font-semibold text-gray-800">${currentUser.displayName || 'Usuario'}</p>
+                                    <p class="text-xs text-gray-600">${currentUser.email}</p>
+                                </div>
+                            </div>
+                            <button
+                                id="signout-button"
+                                class="btn-llevo-secondary px-4 py-2 text-sm rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                            >
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Content -->
+                    <div class="dashboard-content">
+                        <!-- Stats Cards -->
+                        <div class="dashboard-stats">
+                            <div class="stat-card">
+                                <div class="stat-card-title">Total Mensajeros</div>
+                                <div class="stat-card-value">${totalMessengers}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card-title">Saldo Total</div>
+                                <div class="stat-card-value">${formatCurrency(totalBalance)}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card-title">Con Saldo Positivo</div>
+                                <div class="stat-card-value">${positiveBalances}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-card-title">Con Saldo Negativo</div>
+                                <div class="stat-card-value">${negativeBalances}</div>
+                            </div>
+                        </div>
+
+                        <!-- Action Bar -->
+                        <div class="mb-4">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-3">Mensajeros</h2>
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                                <button
+                                    id="register-service-button"
+                                    class="btn-llevo-primary px-4 py-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200 flex items-center justify-center"
+                                >
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                    Registrar Servicio
+                                </button>
                                 <button
                                     id="add-messenger-button"
-                                    class="btn-llevo-secondary p-3 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 ease-in-out flex items-center justify-center"
-                                    title="Agregar nuevo mensajero"
+                                    class="btn-llevo-secondary px-4 py-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200 flex items-center justify-center"
                                 >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                    </svg>
+                                    Agregar Mensajero
                                 </button>
                             </div>
                         </div>
-                ` : `
-                    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl w-full mb-6 border border-gray-200">
-                        <div class="text-center py-8">
-                            <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-xl font-semibold text-gray-700 mb-2">Acceso Restringido</h2>
-                            <p class="text-gray-600">Debes iniciar sesión con una cuenta de administrador para acceder a la gestión de mensajeros.</p>
-                        </div>
-                    </div>
-                `}
 
-                    ${selectedMessenger ? `
-                        <div class="mt-6 sm:mt-8">
-                            <h2 class="text-xl sm:text-2xl font-semibold mb-4 text-center text-llevo-secondary">
-                                Resumen de ${selectedMessenger.name}
-                            </h2>
-                            <div class="bg-llevo-secondary-light p-3 sm:p-4 rounded-xl shadow-inner mb-4 sm:mb-6 border border-llevo-secondary">
-                                <p class="text-lg sm:text-xl font-bold text-center text-llevo-secondary">
-                                    Saldo Actual: <span class="text-green-600">${formatCurrency(recalculateMessengerBalance(selectedMessengerId))}</span>
-                                </p>
-                                ${selectedMessenger.phoneNumber ? `
-                                    <p class="text-sm text-center text-gray-600 mt-2">
-                                        📱 Celular: ${selectedMessenger.phoneNumber}
-                                    </p>
-                                ` : ''}
-                                ${selectedMessenger.createdByName ? `
-                                    <p class="text-sm text-center text-gray-600">
-                                        Creado por: ${selectedMessenger.createdByName}
-                                        ${selectedMessenger.createdAt ? ` el ${getFormattedDate(selectedMessenger.createdAt)}` : ''}
-                                    </p>
-                                ` : ''}
-                                ${selectedMessenger.lastModifiedByName ? `
-                                    <p class="text-sm text-center text-gray-600">
-                                        Última modificación por: ${selectedMessenger.lastModifiedByName}
-                                        ${selectedMessenger.lastModifiedAt ? ` el ${getFormattedDate(selectedMessenger.lastModifiedAt)}` : ''}
-                                    </p>
-                                ` : ''}
-                            </div>
-
-                            <!-- Register Service Form -->
-                            <form id="service-form" class="bg-llevo-secondary-light p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-llevo-secondary">
-                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-secondary">Registrar Servicio</h3>
-                                <div class="mb-4">
-                                    <label for="service-description" class="block text-sm font-medium text-llevo-secondary mb-1">
-                                        Descripción del Servicio:
-                                    </label>
-                                                                            <input
-                                            type="text"
-                                            id="service-description"
-                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
-                                            placeholder="Ej: Entrega de paquete A"
-                                            required
-                                        />
+                        <!-- Messengers Grid -->
+                        <div class="messenger-grid">
+                            ${messengers.length === 0 ? `
+                                <div class="empty-state" style="grid-column: 1 / -1;">
+                                    <div class="empty-state-icon">📭</div>
+                                    <div class="empty-state-text">No hay mensajeros registrados</div>
+                                    <div class="empty-state-subtext">Haz clic en "Agregar Mensajero" para comenzar</div>
                                 </div>
-                                <div class="mb-4">
-                                    <label for="service-amount" class="block text-sm font-medium text-llevo-secondary mb-1">
-                                        Monto del Servicio ($):
-                                    </label>
-                                                                            <input
-                                            type="text"
-                                            id="service-amount"
-                                            class="w-full p-2 border border-llevo-secondary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary currency-input"
-                                            placeholder="Ej: 15.000"
-                                            required
-                                        />
-                                </div>
-                                <button
-                                    type="submit"
-                                    id="service-submit-button"
-                                    class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-                                    ${isProcessing ? 'disabled' : ''}
-                                >
-                                    ${isProcessing ? 'Procesando...' : 'Descontar Servicio'}
-                                </button>
-                                ${isProcessing ? `
-                                    <button
-                                        type="button"
-                                        onclick="resetProcessingState(); renderApp();"
-                                        class="w-full mt-2 btn-llevo-secondary p-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-                                    >
-                                        Cancelar Transacción
-                                    </button>
-                                ` : ''}
-                            </form>
-
-                            <!-- Add Top-up Form -->
-                            <form id="topup-form" class="bg-llevo-primary-light p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-llevo-primary">
-                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-primary">Agregar Recarga</h3>
-                                <div class="mb-4">
-                                    <label for="topup-amount" class="block text-sm font-medium text-llevo-primary mb-1">
-                                        Monto de la Recarga ($):
-                                    </label>
-                                                                            <input
-                                            type="text"
-                                            id="topup-amount"
-                                            class="w-full p-2 border border-llevo-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-primary currency-input"
-                                            placeholder="Ej: 50.000"
-                                            required
-                                        />
-                                </div>
-                                <button
-                                    type="submit"
-                                    id="topup-submit-button"
-                                    class="w-full btn-llevo-primary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
-                                    ${isProcessing ? 'disabled' : ''}
-                                >
-                                    ${isProcessing ? 'Procesando...' : 'Recargar Saldo'}
-                                </button>
-                                ${isProcessing ? `
-                                    <button
-                                        type="button"
-                                        onclick="resetProcessingState(); renderApp();"
-                                        class="w-full mt-2 btn-llevo-secondary p-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-                                    >
-                                        Cancelar Transacción
-                                    </button>
-                                ` : ''}
-                            </form>
-
-                            <!-- History of Services and Top-ups -->
-                            <div class="bg-white p-3 sm:p-5 rounded-xl shadow-md mb-4 sm:mb-6 border border-gray-200">
-                                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-llevo-secondary">Historial de Transacciones</h3>
-                                ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
-                                    <p class="text-llevo-secondary">No hay transacciones registradas para este mensajero.</p>
-                                ` : ''}
-
-                                ${servicesHistory.length > 0 ? `
-                                    <div class="mb-4">
-                                        <h4 class="text-lg font-medium text-llevo-secondary mb-2">Servicios Prestados</h4>
-                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
-                                            ${servicesHistory.map(service => `
-                                                <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary">-${formatCurrency(service.amount)}</span>
-                                ${service.lastModifiedByName ? `<br><small class="text-gray-500">Modificado por: ${service.lastModifiedByName}</small>` : ''}
-                                                </li>
-                                            `).join('')}
-                                        </ul>
+                            ` : messengers.map(messenger => {
+                                const balance = messengerBalances[messenger.id] || 0;
+                                const balanceClass = getBalanceClass(balance);
+                                const messengerServices = allServices.filter(s => s.messengerId === messenger.id);
+                                const messengerTopups = allTopups.filter(t => t.messengerId === messenger.id);
+                                
+                                return `
+                                    <div class="messenger-card" data-messenger-id="${messenger.id}">
+                                        <div class="messenger-card-header">
+                                            <div class="messenger-avatar">
+                                                ${getAvatarInitial(messenger.name)}
+                                            </div>
+                                            <div class="messenger-info">
+                                                <h3 class="messenger-name">${messenger.name}</h3>
+                                                ${messenger.phoneNumber ? `<p class="messenger-phone">📱 ${messenger.phoneNumber}</p>` : ''}
+                                            </div>
+                                        </div>
+                                        <div class="messenger-balance">
+                                            <div class="balance-label">Saldo Pendiente</div>
+                                            <div class="balance-amount ${balanceClass}">${formatCurrency(balance)}</div>
+                                        </div>
+                                        <div class="messenger-stats">
+                                            <div class="stat-item">
+                                                <span class="stat-value">${messengerServices.length}</span>
+                                                <span class="stat-label">Servicios</span>
+                                            </div>
+                                            <div class="stat-item">
+                                                <span class="stat-value">${messengerTopups.length}</span>
+                                                <span class="stat-label">Recargas</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                ` : ''}
-
-                                ${topupsHistory.length > 0 ? `
-                                    <div>
-                                        <h4 class="text-lg font-medium text-llevo-primary mb-2">Recargas Realizadas</h4>
-                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
-                                            ${topupsHistory.map(topup => `
-                                                <li class="mb-1 text-sm text-gray-700">
-                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary">+${formatCurrency(topup.amount)}</span>
-                                ${topup.lastModifiedByName ? `<br><small class="text-gray-500">Modificado por: ${topup.lastModifiedByName}</small>` : ''}
-                                                </li>
-                                            `).join('')}
-                                        </ul>
-                                    </div>
-                                ` : ''}
+                                `;
+                            }).join('')}
+                            
+                            <!-- Add Card -->
+                            <div class="messenger-card add-card" id="add-messenger-card">
+                                <div class="add-card-icon">+</div>
+                                <div class="add-card-text">Agregar Mensajero</div>
                             </div>
-
-                            <!-- Delete Messenger Button -->
-                            <button
-                                id="delete-messenger-button"
-                                class="w-full btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
-                            >
-                                Eliminar Mensajero
-                            </button>
-                        </div>
-                    ` : ''}
-                </div>
-
-                <!-- Llevo Footer with Export/Import -->
-                <div class="llevo-footer w-full text-center">
-                    <div class="bg-llevo-secondary-dark p-4 rounded-xl mb-3">
-                        <h3 class="text-base sm:text-lg font-semibold text-white mb-3">Herramientas de Datos</h3>
-                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-                            <button
-                                id="export-button"
-                                class="btn-llevo-primary flex-1"
-                            >
-                                📤 Exportar Datos
-                            </button>
-                            <button
-                                id="import-button"
-                                class="btn-llevo-secondary flex-1"
-                            >
-                                📥 Importar Datos
-                            </button>
                         </div>
                     </div>
-                    
-                    <!-- Enlace a Consulta Pública -->
-                    <div class="bg-llevo-primary-dark p-3 rounded-xl mb-3">
-                        <h4 class="text-sm font-semibold text-white mb-2">🔍 Consulta Pública</h4>
-                        <p class="text-xs text-white opacity-90 mb-2">Los mensajeros pueden consultar su saldo aquí</p>
-                        <a
-                            href="/consulta"
-                            target="_blank"
-                            class="inline-block bg-white text-llevo-primary-dark px-4 py-2 rounded-lg font-semibold hover:bg-gray-100 transition duration-200"
-                        >
-                            📱 Consultar Saldo
-                        </a>
-                    </div>
-                    
-                    <p class="text-xs text-white opacity-90">© 2024 Llevo - Gestión de Mensajeros</p>
                 </div>
             `;
 
@@ -970,38 +949,49 @@
                 signoutButton.addEventListener('click', signOutUser);
             }
 
-            const messengerSelect = document.getElementById('messenger-select');
-            if (messengerSelect) {
-                messengerSelect.addEventListener('change', async (e) => {
-                    selectedMessengerId = e.target.value;
-                    selectedMessenger = messengers.find(m => m.id === selectedMessengerId) || null;
-                    
-                    // Clear previous history completely to avoid duplicates
-                    servicesHistory = [];
-                    topupsHistory = [];
-                    
-                    // Reset processing state when changing messenger
-                    resetProcessingState();
-                    
-                    if (selectedMessenger) {
-                        // Load fresh data for the selected messenger
-                        await loadServices(selectedMessengerId);
-                        await loadTopups(selectedMessengerId);
+            // Messenger card click listeners
+            const messengerCards = document.querySelectorAll('.messenger-card[data-messenger-id]');
+            messengerCards.forEach(card => {
+                card.addEventListener('click', async (e) => {
+                    const messengerId = card.getAttribute('data-messenger-id');
+                    if (messengerId) {
+                        selectedMessengerId = messengerId;
+                        selectedMessenger = messengers.find(m => m.id === messengerId) || null;
+                        
+                        // Clear previous history
+                        servicesHistory = [];
+                        topupsHistory = [];
+                        
+                        // Reset processing state
+                        resetProcessingState();
+                        
+                        if (selectedMessenger) {
+                            // Load fresh data for the selected messenger
+                            await loadServices(selectedMessengerId);
+                            await loadTopups(selectedMessengerId);
+                        }
+                        
+                        // Show messenger detail modal
+                        showMessengerDetailModal();
                     }
-                    
-                    // Render app after all data is loaded
-                    renderApp();
                 });
-            }
+            });
 
+            // Add messenger button listeners
             const addMessengerButton = document.getElementById('add-messenger-button');
             if (addMessengerButton) {
                 addMessengerButton.addEventListener('click', handleAddMessenger);
             }
 
-            const serviceForm = document.getElementById('service-form');
-            if (serviceForm) {
-                serviceForm.addEventListener('submit', handleRegisterService);
+            const addMessengerCard = document.getElementById('add-messenger-card');
+            if (addMessengerCard) {
+                addMessengerCard.addEventListener('click', handleAddMessenger);
+            }
+
+            // Register service button listener
+            const registerServiceButton = document.getElementById('register-service-button');
+            if (registerServiceButton) {
+                registerServiceButton.addEventListener('click', showRegisterServiceModal);
             }
 
             const topupForm = document.getElementById('topup-form');
@@ -1034,6 +1024,430 @@
             }
 
             const topupAmountInput = document.getElementById('topup-amount');
+            if (topupAmountInput) {
+                topupAmountInput.addEventListener('input', () => formatNumberInput(topupAmountInput));
+                topupAmountInput.addEventListener('blur', () => formatNumberInput(topupAmountInput));
+            }
+        }
+
+        // Function to show messenger detail modal
+        function showMessengerDetailModal() {
+            if (!selectedMessenger) return;
+            
+            const balance = recalculateMessengerBalance(selectedMessengerId);
+            const balanceClass = getBalanceClass(balance);
+            
+            const modalId = 'messenger-detail-modal-' + Date.now();
+            const modalHTML = `
+                <div id="${modalId}" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style="overflow-y: auto; z-index: 2000;">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 my-8" style="max-height: 90vh; overflow-y: auto;">
+                        <div class="p-6">
+                            <!-- Modal Header -->
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center">
+                                    <div class="messenger-avatar" style="margin-right: 1rem;">
+                                        ${getAvatarInitial(selectedMessenger.name)}
+                                    </div>
+                                    <div>
+                                        <h2 class="text-2xl font-bold text-gray-800">${selectedMessenger.name}</h2>
+                                        ${selectedMessenger.phoneNumber ? `<p class="text-sm text-gray-600">📱 ${selectedMessenger.phoneNumber}</p>` : ''}
+                                    </div>
+                                </div>
+                                <button
+                                    id="close-detail-modal"
+                                    class="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                                    style="background: none; border: none; cursor: pointer; padding: 0.5rem;"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            
+                            <!-- Balance Display -->
+                            <div class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+                                <div class="balance-label">Saldo Actual</div>
+                                <div class="balance-amount ${balanceClass}" style="font-size: 2rem;">${formatCurrency(balance)}</div>
+                            </div>
+                            
+                            <!-- Add Top-up Form -->
+                            <form id="topup-form" class="bg-llevo-primary-light p-4 rounded-xl shadow-md mb-4 border border-llevo-primary">
+                                <h3 class="text-lg font-semibold mb-3 text-llevo-primary">Agregar Recarga</h3>
+                                <div class="mb-4">
+                                    <label for="topup-amount" class="block text-sm font-medium text-llevo-primary mb-1">
+                                        Monto de la Recarga ($):
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="topup-amount"
+                                        class="w-full p-2 border border-llevo-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-primary currency-input"
+                                        placeholder="Ej: 50.000"
+                                        required
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    id="topup-submit-button"
+                                    class="w-full btn-llevo-primary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-primary focus:ring-offset-2 transition duration-200"
+                                    ${isProcessing ? 'disabled' : ''}
+                                >
+                                    ${isProcessing ? 'Procesando...' : 'Recargar Saldo'}
+                                </button>
+                            </form>
+                            
+                            <!-- History -->
+                            <div class="bg-white p-4 rounded-xl shadow-md mb-4 border border-gray-200">
+                                <h3 class="text-lg font-semibold mb-3 text-llevo-secondary">Historial de Transacciones</h3>
+                                ${servicesHistory.length === 0 && topupsHistory.length === 0 ? `
+                                    <p class="text-llevo-secondary">No hay transacciones registradas.</p>
+                                ` : ''}
+                                
+                                ${servicesHistory.length > 0 ? `
+                                    <div class="mb-4">
+                                        <h4 class="text-base font-medium text-llevo-secondary mb-2">Servicios Prestados</h4>
+                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
+                                            ${servicesHistory.map(service => `
+                                                <li class="mb-1 text-sm text-gray-700">
+                                                    <span class="font-semibold">${getFormattedDate(service.date)}:</span> ${service.description} - <span class="text-llevo-secondary">-${formatCurrency(service.amount)}</span>
+                                                    ${service.createdByName ? `<br><small class="text-gray-500">Registrado por: ${service.createdByName}</small>` : ''}
+                                                    ${service.totalAmount ? `<br><small class="text-gray-500">Valor total: ${formatCurrency(service.totalAmount)} (descontado 20%)</small>` : ''}
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                
+                                ${topupsHistory.length > 0 ? `
+                                    <div>
+                                        <h4 class="text-base font-medium text-llevo-primary mb-2">Recargas Realizadas</h4>
+                                        <ul class="list-disc pl-5 max-h-48 overflow-y-auto">
+                                            ${topupsHistory.map(topup => `
+                                                <li class="mb-1 text-sm text-gray-700">
+                                                    <span class="font-semibold">${getFormattedDate(topup.date)}:</span> <span class="text-llevo-primary">+${formatCurrency(topup.amount)}</span>
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <!-- Actions -->
+                            <div class="flex space-x-3">
+                                <button
+                                    id="delete-messenger-button"
+                                    class="flex-1 btn-llevo-secondary p-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                                >
+                                    Eliminar Mensajero
+                                </button>
+                                <button
+                                    id="close-detail-modal-btn"
+                                    class="flex-1 bg-gray-300 text-gray-700 px-4 py-3 rounded-lg font-medium hover:bg-gray-400 transition duration-200"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById(modalId);
+            
+            // Close modal handlers
+            const closeModal = () => {
+                modal.remove();
+                selectedMessengerId = '';
+                selectedMessenger = null;
+                servicesHistory = [];
+                topupsHistory = [];
+            };
+            
+            document.getElementById('close-detail-modal').addEventListener('click', closeModal);
+            document.getElementById('close-detail-modal-btn').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+            
+            // Delete messenger handler
+            const deleteBtn = document.getElementById('delete-messenger-button');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    // Guardar los valores antes de cerrar el modal
+                    if (!selectedMessenger) {
+                        console.error('No hay mensajero seleccionado');
+                        return;
+                    }
+                    const messengerId = selectedMessenger.id;
+                    const messengerName = selectedMessenger.name;
+                    closeModal();
+                    handleDeleteMessenger(messengerId, messengerName);
+                });
+            }
+            
+            // Form handlers
+            attachFormListeners(modal);
+        }
+        
+        // Function to show register service modal from dashboard
+        function showRegisterServiceModal() {
+            if (messengers.length === 0) {
+                showModal('message', 'No hay mensajeros registrados. Por favor, agrega un mensajero primero.');
+                return;
+            }
+
+            const modalId = 'register-service-modal-' + Date.now();
+            const today = getTodayLocalDate(); // Format: YYYY-MM-DD in local timezone
+            
+            const modalHTML = `
+                <div id="${modalId}" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style="overflow-y: auto; z-index: 1000;">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 my-8">
+                        <div class="p-6">
+                            <!-- Modal Header -->
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-2xl font-bold text-gray-800">Registrar Servicio</h2>
+                                <button
+                                    id="close-register-service-modal"
+                                    class="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                                    style="background: none; border: none; cursor: pointer; padding: 0.5rem;"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            
+                            <form id="register-service-form">
+                                <!-- Messenger Selection -->
+                                <div class="mb-4">
+                                    <label for="service-messenger-select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Mensajero: <span class="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        id="service-messenger-select"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                        required
+                                    >
+                                        <option value="">-- Seleccionar Mensajero --</option>
+                                        ${messengers.map(m => `
+                                            <option value="${m.id}">${m.name}${m.phoneNumber ? ` - ${m.phoneNumber}` : ''}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                
+                                <!-- Service Date -->
+                                <div class="mb-4">
+                                    <label for="service-date" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Fecha del Servicio: <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="service-date"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                        value="${today}"
+                                        required
+                                    />
+                                </div>
+                                
+                                <!-- Service Description -->
+                                <div class="mb-4">
+                                    <label for="service-description-new" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Descripción del Servicio: <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="service-description-new"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary"
+                                        placeholder="Ej: Entrega de paquete A"
+                                        required
+                                    />
+                                </div>
+                                
+                                <!-- Service Total Amount -->
+                                <div class="mb-4">
+                                    <label for="service-total-amount" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Valor Total del Servicio ($): <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="service-total-amount"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-llevo-secondary currency-input"
+                                        placeholder="Ej: 10.000"
+                                        required
+                                    />
+                                    <p class="text-xs text-gray-500 mt-1">Se descontará el 20% de este valor del saldo del mensajero</p>
+                                </div>
+                                
+                                <!-- Calculation Preview -->
+                                <div id="service-calculation-preview" class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg hidden">
+                                    <h4 class="text-sm font-semibold text-blue-800 mb-2">Resumen del Cálculo:</h4>
+                                    <div class="space-y-1 text-sm">
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-700">Valor Total del Servicio:</span>
+                                            <span class="font-semibold" id="preview-total">$0</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-700">Porcentaje a descontar (20%):</span>
+                                            <span class="font-semibold text-blue-600" id="preview-percentage">$0</span>
+                                        </div>
+                                        <div class="pt-2 border-t border-blue-200">
+                                            <div class="flex justify-between">
+                                                <span class="font-semibold text-gray-800">Monto a descontar del saldo:</span>
+                                                <span class="font-bold text-lg text-red-600" id="preview-amount">$0</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Buttons -->
+                                <div class="flex space-x-3">
+                                    <button
+                                        type="button"
+                                        id="cancel-register-service"
+                                        class="flex-1 bg-gray-300 text-gray-700 px-4 py-3 rounded-lg font-medium hover:bg-gray-400 transition duration-200"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        id="submit-register-service"
+                                        class="flex-1 btn-llevo-secondary px-4 py-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-llevo-secondary focus:ring-offset-2 transition duration-200"
+                                    >
+                                        Registrar Servicio
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById(modalId);
+            
+            // Close modal function
+            const closeModal = () => {
+                modal.remove();
+            };
+            
+            // Close handlers
+            document.getElementById('close-register-service-modal').addEventListener('click', closeModal);
+            document.getElementById('cancel-register-service').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+            
+            // Calculate and preview on amount change
+            const totalAmountInput = document.getElementById('service-total-amount');
+            const calculationPreview = document.getElementById('service-calculation-preview');
+            const previewTotal = document.getElementById('preview-total');
+            const previewPercentage = document.getElementById('preview-percentage');
+            const previewAmount = document.getElementById('preview-amount');
+            
+            totalAmountInput.addEventListener('input', () => {
+                formatNumberInput(totalAmountInput);
+                updateServiceCalculation();
+            });
+            
+            function updateServiceCalculation() {
+                const totalValue = getNumericValue(totalAmountInput.value);
+                if (totalValue > 0) {
+                    const percentage = Math.round(totalValue * 0.20); // 20%
+                    
+                    previewTotal.textContent = formatCurrency(totalValue);
+                    previewPercentage.textContent = formatCurrency(percentage);
+                    previewAmount.textContent = formatCurrency(percentage);
+                    
+                    calculationPreview.classList.remove('hidden');
+                } else {
+                    calculationPreview.classList.add('hidden');
+                }
+            }
+            
+            // Form submission
+            const form = document.getElementById('register-service-form');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const messengerId = document.getElementById('service-messenger-select').value;
+                const serviceDate = document.getElementById('service-date').value;
+                const description = document.getElementById('service-description-new').value.trim();
+                const totalAmount = getNumericValue(totalAmountInput.value);
+                
+                if (!messengerId) {
+                    showModal('message', 'Por favor, selecciona un mensajero.');
+                    return;
+                }
+                
+                if (!description) {
+                    showModal('message', 'Por favor, ingresa una descripción del servicio.');
+                    return;
+                }
+                
+                if (isNaN(totalAmount) || totalAmount <= 0) {
+                    showModal('message', 'Por favor, ingresa un valor válido para el servicio.');
+                    return;
+                }
+                
+                // Calculate 20%
+                const amountToDeduct = Math.round(totalAmount * 0.20);
+                
+                // Show confirmation with calculation
+                const messenger = messengers.find(m => m.id === messengerId);
+                // Format date for display (serviceDate is YYYY-MM-DD)
+                const [year, month, day] = serviceDate.split('-');
+                const displayDate = new Date(year, month - 1, day).toLocaleDateString('es-CO');
+                const confirmMessage = `¿Confirmar registro del servicio?\n\nMensajero: ${messenger.name}\nFecha: ${displayDate}\nDescripción: ${description}\nValor Total: ${formatCurrency(totalAmount)}\nMonto a descontar (20%): ${formatCurrency(amountToDeduct)}`;
+                
+                showModal('confirm', confirmMessage, async () => {
+                    try {
+                        // Set selected messenger for the save function
+                        selectedMessengerId = messengerId;
+                        selectedMessenger = messenger;
+                        
+                        // Create service with the calculated amount (20%)
+                        const newService = {
+                            description: description,
+                            amount: amountToDeduct,
+                            totalAmount: totalAmount, // Store total amount for reference
+                            serviceDate: serviceDate
+                        };
+                        
+                        // Use the existing saveService function but with custom date
+                        await saveServiceWithDate(newService, serviceDate);
+                        
+                        // Reload services for the selected messenger
+                        await loadServices(selectedMessengerId);
+                        
+                        // Reload all transactions and update dashboard
+                        await loadAllTransactions();
+                        
+                        // Calculate new balance
+                        const newBalance = recalculateMessengerBalance(selectedMessengerId);
+                        
+                        closeModal();
+                        showModal('message', `✅ Servicio registrado exitosamente.\n\nValor total: ${formatCurrency(totalAmount)}\nDescontado del saldo (20%): ${formatCurrency(amountToDeduct)}\nSaldo actual de ${messenger.name}: ${formatCurrency(newBalance)}`);
+                        
+                        // Reset selection
+                        selectedMessengerId = '';
+                        selectedMessenger = null;
+                        servicesHistory = [];
+                        topupsHistory = [];
+                        
+                        renderApp();
+                    } catch (error) {
+                        console.error('Error registering service:', error);
+                        showModal('message', 'Error al registrar el servicio. Por favor, intenta de nuevo.');
+                    }
+                });
+            });
+        }
+
+        // Function to attach form listeners in modal
+        function attachFormListeners(modal) {
+            const topupForm = modal.querySelector('#topup-form');
+            if (topupForm) {
+                topupForm.addEventListener('submit', handleAddTopup);
+            }
+            
+            // Currency input formatters
+            const topupAmountInput = modal.querySelector('#topup-amount');
             if (topupAmountInput) {
                 topupAmountInput.addEventListener('input', () => formatNumberInput(topupAmountInput));
                 topupAmountInput.addEventListener('blur', () => formatNumberInput(topupAmountInput));
@@ -1274,6 +1688,9 @@
                     // Mostrar mensaje de éxito usando showModal
                     showModal('message', `✅ Mensajero '${name}' con celular ${cleanPhone} agregado con éxito a Firebase.`);
                     
+                    // Reload messengers and transactions
+                    await loadMessengers();
+                    
                     // Actualizar la interfaz
                     renderApp();
                     
@@ -1336,6 +1753,8 @@
                             servicesHistory = [];
                             topupsHistory = [];
                         }
+                        // Reload messengers and transactions
+                        await loadMessengers();
                         renderApp();
                     } catch (e) {
                         console.error("Error deleting messenger:", e);
@@ -1390,8 +1809,20 @@
                 showModal('message', `Servicio registrado para ${selectedMessenger.name} en Firebase. Saldo actual: ${formatCurrency(newBalance)}.`);
                 clearForms();
                 
+                // Reload all transactions and update dashboard
+                await loadAllTransactions();
+                
+                // Reload services for the modal
+                await loadServices(selectedMessengerId);
+                
                 // Reset processing state before rendering
                 resetProcessingState();
+                
+                // Close modal and refresh dashboard
+                const modal = document.querySelector('[id^="messenger-detail-modal-"]');
+                if (modal) {
+                    modal.remove();
+                }
                 renderApp();
             } catch (e) {
                 console.error("Error registering service: ", e);
@@ -1443,8 +1874,20 @@
                 showModal('message', `Recarga de ${formatCurrency(amount)} agregada para ${selectedMessenger.name} en Firebase. Saldo actual: ${formatCurrency(newBalance)}.`);
                 clearForms();
                 
+                // Reload all transactions and update dashboard
+                await loadAllTransactions();
+                
+                // Reload topups for the modal
+                await loadTopups(selectedMessengerId);
+                
                 // Reset processing state before rendering
                 resetProcessingState();
+                
+                // Close modal and refresh dashboard
+                const modal = document.querySelector('[id^="messenger-detail-modal-"]');
+                if (modal) {
+                    modal.remove();
+                }
                 renderApp();
             } catch (e) {
                 console.error("Error adding top-up: ", e);
