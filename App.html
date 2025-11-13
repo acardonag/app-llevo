@@ -97,6 +97,7 @@
         let messengerBalances = {}; // Store balances for all messengers
         let allServices = []; // Store all services
         let allTopups = []; // Store all topups
+        let allSpecialServices = []; // Store all special services
 
         // Local Storage Keys
         const STORAGE_KEYS = {
@@ -309,6 +310,7 @@
             const totalServices = servicesHistory.reduce((sum, service) => sum + service.amount, 0);
             const totalTopups = topupsHistory.reduce((sum, topup) => sum + topup.amount, 0);
             
+            // Special services are NOT associated with messengers, so they don't affect balance
             // Base balance starts at 0, so final balance = totalTopups - totalServices
             return totalTopups - totalServices;
         }
@@ -323,6 +325,7 @@
             const totalServices = messengerServices.reduce((sum, service) => sum + (service.amount || 0), 0);
             const totalTopups = messengerTopups.reduce((sum, topup) => sum + (topup.amount || 0), 0);
             
+            // Special services are NOT associated with messengers, so they don't affect balance
             return totalTopups - totalServices;
         }
 
@@ -344,6 +347,7 @@
             try {
                 allServices = await loadFromFirebase('services');
                 allTopups = await loadFromFirebase('topups');
+                allSpecialServices = await loadFromFirebase('specialServices');
                 
                 // Calculate balances for all messengers
                 messengerBalances = {};
@@ -354,6 +358,7 @@
                 console.error('Error loading all transactions:', error);
                 allServices = [];
                 allTopups = [];
+                allSpecialServices = [];
             }
         }
 
@@ -805,6 +810,8 @@
             const totalBalance = Object.values(messengerBalances).reduce((sum, balance) => sum + balance, 0);
             const positiveBalances = Object.values(messengerBalances).filter(b => b > 0).length;
             const negativeBalances = Object.values(messengerBalances).filter(b => b < 0).length;
+            const totalSpecialServices = allSpecialServices.reduce((sum, service) => sum + (service.cost || 0), 0);
+            const totalSpecialServicesCount = allSpecialServices.length;
 
             appRoot.innerHTML = `
                 <div class="dashboard-container">
@@ -853,6 +860,12 @@
                                 <div class="stat-card-title">Con Saldo Negativo</div>
                                 <div class="stat-card-value">${negativeBalances}</div>
                             </div>
+                            <div class="stat-card" id="special-services-stat-card" style="border-left: 4px solid #4338ca; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)';" onmouseout="this.style.transform=''; this.style.boxShadow='';">
+                                <div class="stat-card-title">Servicios Especiales</div>
+                                <div class="stat-card-value" style="color: #4338ca;">${totalSpecialServicesCount}</div>
+                                <div class="text-sm text-gray-600 mt-1">Total: ${formatCurrency(totalSpecialServices)}</div>
+                                <div class="text-xs text-indigo-600 mt-2 font-medium">👆 Click para ver historial</div>
+                            </div>
                         </div>
 
                         <!-- Action Bar -->
@@ -867,6 +880,15 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                     </svg>
                                     Registrar Servicio
+                                </button>
+                                <button
+                                    id="register-special-service-button"
+                                    class="bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 flex items-center justify-center"
+                                >
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
+                                    </svg>
+                                    Servicio Especial
                                 </button>
                                 <button
                                     id="add-messenger-button"
@@ -998,6 +1020,18 @@
             const registerServiceButton = document.getElementById('register-service-button');
             if (registerServiceButton) {
                 registerServiceButton.addEventListener('click', showRegisterServiceModal);
+            }
+
+            // Register special service button listener
+            const registerSpecialServiceButton = document.getElementById('register-special-service-button');
+            if (registerSpecialServiceButton) {
+                registerSpecialServiceButton.addEventListener('click', showRegisterSpecialServiceModal);
+            }
+
+            // Special services stat card click listener (to show history)
+            const specialServicesStatCard = document.getElementById('special-services-stat-card');
+            if (specialServicesStatCard) {
+                specialServicesStatCard.addEventListener('click', showSpecialServicesHistoryModal);
             }
 
             const topupForm = document.getElementById('topup-form');
@@ -1458,6 +1492,352 @@
             }
         }
         
+        // Function to show special services history modal
+        function showSpecialServicesHistoryModal() {
+            const modalId = 'special-services-history-modal-' + Date.now();
+            
+            // Calculate total
+            const totalSpecialServices = allSpecialServices.reduce((sum, service) => sum + (service.cost || 0), 0);
+            
+            // Sort services by date (newest first)
+            const sortedServices = [...allSpecialServices].sort((a, b) => {
+                const dateA = new Date(a.date || a.createdAt);
+                const dateB = new Date(b.date || b.createdAt);
+                return dateB - dateA;
+            });
+            
+            const modalHTML = `
+                <div id="${modalId}" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" style="overflow-y: auto; z-index: 1000;">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-8">
+                        <div class="p-6">
+                            <!-- Modal Header -->
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-2xl font-bold text-gray-800">⭐ Historial de Servicios Especiales</h2>
+                                <button
+                                    id="close-special-services-history-modal"
+                                    class="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                                    style="background: none; border: none; cursor: pointer; padding: 0.5rem;"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            
+                            <!-- Summary -->
+                            <div class="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <div class="text-sm text-indigo-600 font-medium">Total de Servicios</div>
+                                        <div class="text-2xl font-bold text-indigo-700">${allSpecialServices.length}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm text-indigo-600 font-medium">Total Acumulado</div>
+                                        <div class="text-2xl font-bold text-indigo-700">${formatCurrency(totalSpecialServices)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Services List -->
+                            <div class="max-h-96 overflow-y-auto">
+                                ${sortedServices.length === 0 ? `
+                                    <div class="text-center py-8">
+                                        <div class="text-gray-400 text-4xl mb-2">📭</div>
+                                        <p class="text-gray-500">No hay servicios especiales registrados</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-3">
+                                        ${sortedServices.map((service, index) => `
+                                            <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                                                <div class="flex justify-between items-start gap-4">
+                                                    <div class="flex-1">
+                                                        <div class="flex items-center gap-2 mb-2">
+                                                            <span class="text-lg">⭐</span>
+                                                            <span class="font-semibold text-gray-800">${service.detail || 'Sin detalle'}</span>
+                                                        </div>
+                                                        <div class="text-sm text-gray-600 space-y-1">
+                                                            <div>
+                                                                <span class="font-medium">Fecha:</span> ${getFormattedDate(service.date || service.createdAt)}
+                                                            </div>
+                                                            <div>
+                                                                <span class="font-medium">Costo:</span> 
+                                                                <span class="text-indigo-700 font-semibold">${formatCurrency(service.cost || 0)}</span>
+                                                            </div>
+                                                            ${service.createdByName ? `
+                                                                <div>
+                                                                    <span class="font-medium">Registrado por:</span> ${service.createdByName}
+                                                                </div>
+                                                            ` : ''}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        id="delete-special-service-${service.id || index}"
+                                                        class="delete-special-service-btn flex-shrink-0 bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                                                        data-service-id="${service.id}"
+                                                        data-service-detail="${(service.detail || 'Sin detalle').replace(/"/g, '&quot;')}"
+                                                        title="Eliminar servicio"
+                                                    >
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `}
+                            </div>
+                            
+                            <!-- Close Button -->
+                            <div class="mt-6 flex justify-end">
+                                <button
+                                    id="close-special-services-history-modal-btn"
+                                    class="bg-indigo-700 hover:bg-indigo-800 text-white px-6 py-2 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById(modalId);
+            
+            // Close modal function
+            const closeModal = () => {
+                modal.remove();
+            };
+            
+            // Close handlers
+            document.getElementById('close-special-services-history-modal').addEventListener('click', closeModal);
+            document.getElementById('close-special-services-history-modal-btn').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+            
+            // Delete button handlers
+            const deleteButtons = modal.querySelectorAll('.delete-special-service-btn');
+            deleteButtons.forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const serviceId = button.getAttribute('data-service-id');
+                    const serviceDetail = button.getAttribute('data-service-detail');
+                    
+                    if (!serviceId) {
+                        showModal('message', 'Error: No se pudo identificar el servicio a eliminar.');
+                        return;
+                    }
+                    
+                    const confirmMessage = `¿Estás seguro de que deseas eliminar este servicio especial?\n\nDetalle: ${serviceDetail}\n\nEsta acción no se puede deshacer.`;
+                    
+                    showModal('confirm', confirmMessage, async () => {
+                        try {
+                            // Disable button during deletion
+                            button.disabled = true;
+                            button.classList.add('opacity-50', 'cursor-not-allowed');
+                            
+                            // Delete from Firebase
+                            await deleteFromFirebase('specialServices', serviceId);
+                            
+                            // Reload all transactions
+                            await loadAllTransactions();
+                            
+                            // Close and reopen modal to refresh the list
+                            closeModal();
+                            showSpecialServicesHistoryModal();
+                            
+                            showModal('message', '✅ Servicio especial eliminado exitosamente.');
+                            
+                            // Update dashboard
+                            renderApp();
+                        } catch (error) {
+                            console.error('Error deleting special service:', error);
+                            showModal('message', 'Error al eliminar el servicio especial. Por favor, intenta de nuevo.');
+                            
+                            // Re-enable button on error
+                            button.disabled = false;
+                            button.classList.remove('opacity-50', 'cursor-not-allowed');
+                        }
+                    });
+                });
+            });
+        }
+        
+        // Function to show register special service modal from dashboard
+        function showRegisterSpecialServiceModal() {
+            const modalId = 'register-special-service-modal-' + Date.now();
+            const today = getTodayLocalDate();
+            
+            const modalHTML = `
+                <div id="${modalId}" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" style="overflow-y: auto; z-index: 1000;">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 my-8">
+                        <div class="p-6">
+                            <!-- Modal Header -->
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-2xl font-bold text-gray-800">⭐ Registrar Servicio Especial</h2>
+                                <button
+                                    id="close-register-special-service-modal"
+                                    class="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                                    style="background: none; border: none; cursor: pointer; padding: 0.5rem;"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            
+                            <form id="register-special-service-form">
+                                <!-- Service Date -->
+                                <div class="mb-4">
+                                    <label for="special-service-date" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Fecha del Servicio: <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="special-service-date"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value="${today}"
+                                        required
+                                    />
+                                </div>
+                                
+                                <!-- Service Detail -->
+                                <div class="mb-4">
+                                    <label for="special-service-detail" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Detalle del Servicio: <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="special-service-detail"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Ej: Servicio de entrega urgente"
+                                        required
+                                    />
+                                </div>
+                                
+                                <!-- Service Cost -->
+                                <div class="mb-4">
+                                    <label for="special-service-cost" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Costo del Servicio ($): <span class="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="special-service-cost"
+                                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 currency-input"
+                                        placeholder="Ej: 25.000"
+                                        required
+                                    />
+                                </div>
+                                
+                                <!-- Buttons -->
+                                <div class="flex space-x-3">
+                                    <button
+                                        type="button"
+                                        id="cancel-register-special-service"
+                                        class="flex-1 bg-gray-300 text-gray-700 px-4 py-3 rounded-lg font-medium hover:bg-gray-400 transition duration-200"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        id="submit-register-special-service"
+                                        class="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-3 rounded-lg font-semibold shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200"
+                                    >
+                                        Registrar Servicio Especial
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById(modalId);
+            
+            // Close modal function
+            const closeModal = () => {
+                modal.remove();
+            };
+            
+            // Close handlers
+            document.getElementById('close-register-special-service-modal').addEventListener('click', closeModal);
+            document.getElementById('cancel-register-special-service').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+            
+            // Format cost input
+            const costInput = document.getElementById('special-service-cost');
+            if (costInput) {
+                costInput.addEventListener('input', () => formatNumberInput(costInput));
+                costInput.addEventListener('blur', () => formatNumberInput(costInput));
+            }
+            
+            // Form submission
+            const form = document.getElementById('register-special-service-form');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const serviceDate = document.getElementById('special-service-date').value;
+                const detail = document.getElementById('special-service-detail').value.trim();
+                const cost = getNumericValue(costInput.value);
+                
+                if (!detail) {
+                    showModal('message', 'Por favor, ingresa el detalle del servicio.');
+                    return;
+                }
+                
+                if (isNaN(cost) || cost <= 0) {
+                    showModal('message', 'Por favor, ingresa un costo válido para el servicio.');
+                    return;
+                }
+                
+                // Show confirmation
+                const [year, month, day] = serviceDate.split('-');
+                const displayDate = new Date(year, month - 1, day).toLocaleDateString('es-CO');
+                const confirmMessage = `¿Confirmar registro del servicio especial?\n\nFecha: ${displayDate}\nDetalle: ${detail}\nCosto: ${formatCurrency(cost)}`;
+                
+                showModal('confirm', confirmMessage, async () => {
+                    try {
+                        // Save special service (no messengerId)
+                        await saveSpecialService({
+                            detail: detail,
+                            cost: cost,
+                            serviceDate: serviceDate
+                        }, serviceDate);
+                        
+                        // Reload all transactions and update dashboard
+                        await loadAllTransactions();
+                        
+                        closeModal();
+                        showModal('message', `✅ Servicio especial registrado exitosamente.\n\nCosto: ${formatCurrency(cost)}`);
+                        
+                        renderApp();
+                    } catch (error) {
+                        console.error('Error registering special service:', error);
+                        showModal('message', 'Error al registrar el servicio especial. Por favor, intenta de nuevo.');
+                    }
+                });
+            });
+        }
+
+        // Function to save special service (not associated with any messenger)
+        async function saveSpecialService(service, serviceDate) {
+            try {
+                await saveToFirebase('specialServices', {
+                    detail: service.detail,
+                    cost: service.cost,
+                    createdBy: currentUser.uid,
+                    createdByEmail: currentUser.email,
+                    createdByName: currentUser.displayName || currentUser.email,
+                    createdAt: new Date().toISOString(),
+                    date: dateStringToISO(serviceDate)
+                });
+            } catch (error) {
+                console.error('Error saving special service:', error);
+                throw error;
+            }
+        }
+
         // Function to show register service modal from dashboard
         function showRegisterServiceModal() {
             if (messengers.length === 0) {
@@ -2210,3 +2590,4 @@
     </script>
 </body>
 </html>
+
