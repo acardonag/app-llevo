@@ -178,6 +178,9 @@ body {
 .border-green-300 { border-color: #86efac; }
 .border-indigo-200 { border-color: #c7d2fe; }
 
+.border-red-500 { border-color: #ef4444; }
+.border-green-500 { border-color: #22c55e; }
+
 /* Llevo Brand Border Colors */
 .border-llevo-primary { border-color: #fad02c; }
 .border-llevo-primary-dark { border-color: #e6b800; }
